@@ -2,7 +2,8 @@ import gymnasium as gym
 import numpy as np
 from myPPOClasses import Agent
 import matplotlib.pyplot as plt
-import maze_exploration
+import maze_exploration_env
+
 
 # Function to plot learning curve
 def plot_learning_curve(x, scores, figure_file):
@@ -13,18 +14,19 @@ def plot_learning_curve(x, scores, figure_file):
     plt.title('Running average of previous 100 scores')
     plt.savefig(figure_file)
 
+
 if __name__ == '__main__':
-    env = gym.make('maze-exploration-v0', render_mode=None)
-    N = 20
+    env = gym.make('maze-exploration-v0', render_mode='human')
+    N = 1
     batch_size = 5
     n_epochs = 4
-    alpha = 0.0003
+    alpha = 0.9
     agent = Agent(n_actions=env.action_space.n, batch_size=batch_size,
-                    alpha=alpha, n_epochs=n_epochs,
-                    input_dims=env.observation_space.shape)
-    n_games = 100
+                  alpha=alpha, n_epochs=n_epochs,
+                  input_dims=env.observation_space.shape)
+    n_games = 1
 
-    figure_file = 'plots/cartpole.png'
+    figure_file = 'plots/results.png'
 
     best_score = 0
     score_history = []
@@ -56,7 +58,7 @@ if __name__ == '__main__':
             # agent.save_models()
 
         print('episode', i, 'score %.1f' % score, 'avg score %.1f' % avg_score,
-                'time_steps', n_steps, 'learning_steps', learn_iters)
+              'time_steps', n_steps, 'learning_steps', learn_iters)
 
-    x = [i+1 for i in range(len(score_history))]
+    x = [i + 1 for i in range(len(score_history))]
     plot_learning_curve(x, score_history, figure_file)
