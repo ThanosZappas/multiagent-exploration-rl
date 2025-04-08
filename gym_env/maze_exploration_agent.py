@@ -12,7 +12,7 @@ from os import path
 
 
 # Maze generation functions
-def create_maze(rows, columns, obstacle_probability=0.8):
+def create_maze(rows, columns, obstacle_probability=0.85):
     # Reduce the input dimensions to generate a maze with corridors.
     rows = int(rows / 2)
     columns = int(columns / 2)
@@ -26,7 +26,7 @@ def create_maze(rows, columns, obstacle_probability=0.8):
         random.shuffle(directions)
         for dx, dy in directions:
             nx, ny = x + dx, y + dy
-            if nx >= 0 and ny >= 0 and nx < rows and ny < columns and maze[2 * nx + 1, 2 * ny + 1] == 1:
+            if 0 <= nx < rows and 0 <= ny < columns and maze[2 * nx + 1, 2 * ny + 1] == 1:
                 maze[2 * nx + 1, 2 * ny + 1] = 0
                 maze[2 * x + 1 + dx, 2 * y + 1 + dy] = 0
                 stack.append((nx, ny))
@@ -103,8 +103,8 @@ class MazeExploration:
         fps: rendering frames per second.
         """
         # Save inputs for maze generation. The generated maze will update grid_rows and grid_columns.
-        self.input_rows = grid_rows+2
-        self.input_columns = grid_columns+2
+        self.input_rows = grid_rows + 2
+        self.input_columns = grid_columns + 2
         self.obstacle_probability = obstacle_probability
         self.fps = fps
         self.last_action = ''
@@ -186,16 +186,16 @@ class MazeExploration:
             new_position[0] -= 1
         elif agent_action == AgentAction.DOWN:
             new_position[0] += 1
-        reward = -0.1  # Default reward for a step.
+        reward = -0.5  # Default reward for a step.
         row, column = new_position
         # Check for boundaries.
         if row < 0 or row >= self.grid_rows or column < 0 or column >= self.grid_columns:
-            reward += -1.0
+            reward -= 10.0
             return reward, False  # Out of bounds: ignore action.
 
         # Check for wall collision.
         if self.maze[row, column] == 1:
-            reward += -1.0
+            reward -= 10.0
             return reward, False  # Hit a wall: do not move.
 
         # Valid move: update agent position.
@@ -203,14 +203,15 @@ class MazeExploration:
         # Reward new free cell visits.
         if not self.visited[row, column]:
             self.visited[row, column] = True
-            reward += 2.0  # Small reward for a new cell.
-
+            reward += 2.25  # Small reward for a new cell.
+        else:
+            reward -= 0.2  # Additional penalty for revisiting.
 
         # Check if all free cells have been visited.
         # Only count cells where maze == 0.
         free_cell_indices = (self.maze == 0)
         if np.all(self.visited[free_cell_indices]):
-            reward += float(np.sum(free_cell_indices) * 15)  # Big reward for task completion.
+            reward += float(np.sum(free_cell_indices) * 10)  # Big reward for task completion.
             terminated = True
         else:
             terminated = False
@@ -240,7 +241,7 @@ class MazeExploration:
             for column in range(self.grid_columns):
                 pos = (column * self.cell_width, row * self.cell_height)
                 if self.maze[row, column] == 1:
-                    if row == 0 or column == 0 or row == self.grid_rows-1 or column == self.grid_columns-1:
+                    if row == 0 or column == 0 or row == self.grid_rows - 1 or column == self.grid_columns - 1:
                         self.window_surface.blit(self.wall_img, pos)
                     else:
                         self.window_surface.blit(self.obstacle_img, pos)
@@ -260,15 +261,16 @@ class MazeExploration:
     def _process_events(self):
         # Process user events, key presses
         for event in pygame.event.get():
-            # User clicked on X at the top right corner of window
+            # User clicked on X in the top right corner of window
             if event.type == pygame.QUIT:
                 pygame.quit()
                 sys.exit()
-            if (event.type == pygame.KEYDOWN):
+            if event.type == pygame.KEYDOWN:
                 # User hit escape
-                if (event.key == pygame.K_ESCAPE):
+                if event.key == pygame.K_ESCAPE:
                     pygame.quit()
                     sys.exit()
+
 
 # For unit testing
 if __name__ == "__main__":

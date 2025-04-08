@@ -6,7 +6,7 @@ import numpy as np
 import random
 import pickle
 from matplotlib import pyplot as plt
-from stable_baselines3 import PPO, A2C, SAC
+from stable_baselines3 import PPO, A2C
 import policies
 
 import maze_exploration_env
@@ -88,7 +88,7 @@ def train_sb3_ppo():
     # Use MlpPolicy for observation space 1D vector.
     time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     log_dir = f"{log_dir}/{time}"
-    model = PPO(policies.MlpPolicy, env, verbose=1, device=device, tensorboard_log=log_dir, ent_coef=0.001)
+    model = PPO(policies.MlpPolicy, env, verbose=1, device=device, tensorboard_log=log_dir, ent_coef=0.01)
 
     # This loop will keep training until you stop it with Ctr-C.
     # Start another cmd prompt and launch Tensorboard: tensorboard --logdir logs
@@ -96,9 +96,9 @@ def train_sb3_ppo():
     # Stop the training when you're satisfied with the status.
     TIMESTEPS = 1000
     iters = 0
-    for iters in range(200):
+    for iters in range(500):
         model.learn(total_timesteps=TIMESTEPS, reset_num_timesteps=False)  # train
-        model.save(f"{model_dir}/PPO_{time}/ppo_{TIMESTEPS * iters}")  # Save a trained model every TIMESTEPS
+        # model.save(f"{model_dir}/PPO_{time}/ppo_{TIMESTEPS * iters}")  # Save a trained model every TIMESTEPS
         # iters += 1
     # model.save("models/test_model")  # Save a trained model
     vec_env = model.get_env()
@@ -131,10 +131,11 @@ def train_sb3_a2c():
     # Once Tensorboard is loaded, it will print a URL. Follow the URL to see the status of the training.
     # Stop the training when you're satisfied with the status.
     TIMESTEPS = 1000
-    iters = 0
+    # iters = 0
     for iters in range(200):
         model.learn(total_timesteps=TIMESTEPS, reset_num_timesteps=False)  # train
-        model.save(f"{model_dir}/A2C_{time}/a2c_{TIMESTEPS * iters}")  # Save a trained model every TIMESTEPS
+        # model.save(f"{model_dir}/A2C_{time}/a2c_{TIMESTEPS * iters}",
+        #            include=env)  # Save a trained model every TIMESTEPS
         # iters += 1
     # model.save("models/test_model")  # Save a trained model
     vec_env = model.get_env()
@@ -148,8 +149,21 @@ def train_sb3_a2c():
 
 
 # Example call:
+def predict_sb3_model():
+    model = PPO.load("models/PPO_20250401-224617/ppo_426000.zip",
+                     env=gym.make('maze-exploration-v0', render_mode='human'))
+    # env = gym.make('maze-exploration-v0')
+    env = model.get_env()
+    observation = env.reset()
+    done = False
+    while not done:
+        action, _states = model.predict(observation)
+        observation, rewards, done, info = env.step(action)
+        env.render()
+
+
 if __name__ == "__main__":
     # run_q(episodes=500, is_training=True, render_mode=None)
-    # train_sb3_ppo()  # Train using StableBaseline3
-    train_sb3_a2c()  # Train using StableBaseline3
+    train_sb3_ppo()  # Train using StableBaseline3
+    # train_sb3_a2c()  # Train using StableBaseline3
     # predict_sb3_model()  # Test using StableBaseline3
