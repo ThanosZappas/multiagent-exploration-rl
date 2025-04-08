@@ -5,8 +5,7 @@ gym_env/myPPOMain.py
 gym_env/plots
 gym_env/models
 gym_env/importedPPOMain.py
-gym_env/logs/
-.gitignore	
+gym_env/logs/	
 .idea/	
 main.py	
 ppo/
