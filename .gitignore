@@ -3,9 +3,9 @@ gym_env/optuna_sb3.py
 gym_env/myPPOClasses.py
 gym_env/myPPOMain.py
 gym_env/plots
-gym_env/models
+models/
 gym_env/importedPPOMain.py
-gym_env/logs/	
+logs/	
 .idea/	
 main.py	
 ppo/

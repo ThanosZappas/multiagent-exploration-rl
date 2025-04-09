@@ -5,10 +5,13 @@ maze."""
 import random
 from enum import Enum
 
+from networkx import difference
 import numpy as np
 import pygame
 import sys
 from os import path
+
+from sqlalchemy import between
 
 
 # Maze generation functions
@@ -74,12 +77,7 @@ def create_maze(rows, columns, obstacle_probability=0.85):
     return maze
 
 
-# Actions the Agent is capable of performing i.e. go in a certain direction
-class AgentAction(Enum):
-    LEFT = 0
-    DOWN = 1
-    RIGHT = 2
-    UP = 3
+
 
 
 # The Maze is divided into a grid. Use these 'tiles' to represent the objects on the grid.
@@ -96,18 +94,20 @@ class GridTile(Enum):
 
 class MazeExploration:
 
-    def __init__(self, grid_rows=5, grid_columns=5, obstacle_probability=0.85, fps=1):
+    def __init__(self, grid_rows=10, grid_columns=10, obstacle_probability=0.85, fps=1):
         """
         grid_rows, grid_columns: dimensions for maze generation.
         obstacle_probability: used in maze generation (controls obstacle probability).
         fps: rendering frames per second.
         """
         # Save inputs for maze generation. The generated maze will update grid_rows and grid_columns.
-        self.input_rows = grid_rows + 2
-        self.input_columns = grid_columns + 2
+        self.input_rows = grid_rows
+        self.input_columns = grid_columns
         self.obstacle_probability = obstacle_probability
         self.fps = fps
         self.last_action = ''
+        self.game_steps = 0
+        self.MAX_STEPS = 1000
         self._init_pygame()
         self.reset()
 
@@ -123,13 +123,13 @@ class MazeExploration:
         self.action_info_height = self.action_font.get_height()
 
         # For rendering
-        self.cell_height = 64
-        self.cell_width = 64
+        self.cell_height = 50
+        self.cell_width = 50
         self.cell_size = (self.cell_width, self.cell_height)
 
         # Define game window size (width, height)
-        self.window_size = (self.cell_width * self.input_columns, self.cell_height
-                            * self.input_rows + self.action_info_height)
+        self.window_size = (self.cell_width * (self.input_columns+1), self.cell_height
+                            * (self.input_rows+1) + self.action_info_height)
         # Initialize game window
         self.window_surface = pygame.display.set_mode(self.window_size)
 
@@ -155,7 +155,7 @@ class MazeExploration:
         self.maze = create_maze(self.input_rows, self.input_columns, self.obstacle_probability)
         # Update grid dimensions from the generated maze.
         self.grid_rows, self.grid_columns = self.maze.shape
-
+        self.steps = 0
         # Update the window size based on the new dimensions.
         self.window_size = (
             self.cell_width * self.grid_columns, self.cell_height * self.grid_rows + self.action_info_height)
@@ -173,50 +173,57 @@ class MazeExploration:
         self.visited = np.zeros((self.grid_rows, self.grid_columns), dtype=bool)
         self.visited[self.agent_position[0], self.agent_position[1]] = True
 
-    def perform_action(self, agent_action: AgentAction) -> (float, bool):
+    def perform_action(self, agent_action):
+        self.steps += 1
         self.last_action = agent_action
 
-        # Determine the target position based on the action.
-        new_position = list(self.agent_position).copy()
-        if agent_action == AgentAction.LEFT:
-            new_position[1] -= 1
-        elif agent_action == AgentAction.RIGHT:
-            new_position[1] += 1
-        elif agent_action == AgentAction.UP:
-            new_position[0] -= 1
-        elif agent_action == AgentAction.DOWN:
-            new_position[0] += 1
-        reward = -0.5  # Default reward for a step.
-        row, column = new_position
-        # Check for boundaries.
-        if row < 0 or row >= self.grid_rows or column < 0 or column >= self.grid_columns:
-            reward -= 10.0
-            return reward, False  # Out of bounds: ignore action.
+        # Convert the action index to a movement direction
+        action_row, action_column = self._action_to_direction(agent_action)
 
-        # Check for wall collision.
-        if self.maze[row, column] == 1:
-            reward -= 10.0
-            return reward, False  # Hit a wall: do not move.
+        # Calculate the new agent position
+        new_row = self.agent_position[0] + action_row
+        new_column = self.agent_position[1] + action_column
 
-        # Valid move: update agent position.
-        self.agent_position = new_position
-        # Reward new free cell visits.
-        if not self.visited[row, column]:
-            self.visited[row, column] = True
-            reward += 2.25  # Small reward for a new cell.
+        reward = 0.0  # Default reward for a step. 0 for no step penalty.
+        truncated = False
+        terminated = False
+
+        # Check if the new position is valid (within the grid boundaries)
+        #if self._is_valid_position(new_row, new_column):
+            # Check if the new position is not blocked by an obstacle
+        if self.maze[new_row, new_column] == 0:
+            self.agent_position = (new_row, new_column)
         else:
-            reward -= 0.2  # Additional penalty for revisiting.
-
-        # Check if all free cells have been visited.
-        # Only count cells where maze == 0.
-        free_cell_indices = (self.maze == 0)
-        if np.all(self.visited[free_cell_indices]):
-            reward += float(np.sum(free_cell_indices) * 10)  # Big reward for task completion.
+            # Penalize collision with obstacle
+            #print("Collision")
+            reward -= -1.0
             terminated = True
-        else:
-            terminated = False
+            return reward, terminated, truncated
+    
 
-        return reward, terminated
+        # Max steps reached. Penalize and terminate.
+        if self.steps >= self.MAX_STEPS:    
+            truncated = True
+            reward -= 1.0
+            return reward, terminated, truncated
+        
+        return reward, terminated, truncated
+    
+        # # Reward new free cell visits.
+        # if not self.visited[new_row, new_column]:
+        #     self.visited[new_row, new_column] = True
+        #     reward += 0  # Small reward for a new cell.
+        
+        # # Check if all free cells have been visited.
+        # # Only count cells where maze == 0.
+        # free_cell_indices = (self.maze == 0)
+        # if np.all(self.visited[free_cell_indices]):
+        #     reward += float(np.sum(free_cell_indices) * 10)  # Big reward for task completion.
+        #     terminated = True
+        # else:
+        #     terminated = False
+
+        # return reward, terminated
 
     def render(self):
         # Render to the console.
@@ -272,16 +279,36 @@ class MazeExploration:
                     sys.exit()
 
 
+    def _random_position(self):
+        valid_positions = np.argwhere(self.maze == 0)
+        index = np.random.choice(len(valid_positions))
+        return valid_positions[index]
+    
+    def _is_valid_position(self, row, column):
+        return 0 <= row < self.grid_rows and 0 <= column < self.grid_columns and self.maze[row, column] == 0
+
+
+    def _action_to_direction(self, action):
+        return self.ACTION_MAP[action]
+    
+    ACTION_MAP = {
+        0: (-1, -1),  # Top Left
+        1: (-1, 0),   # Up
+        2: (-1, 1),   # Top Right
+        3: (0, -1),   # Left
+        4: (0, 0),    # Stay in place
+        5: (0, 1),    # Right
+        6: (1, -1),   # Bottom Left
+        7: (1, 0),    # Down
+        8: (1, 1)     # Bottom Right
+    }
 # For unit testing
 if __name__ == "__main__":
     mazeExploration = MazeExploration(grid_rows=10, grid_columns=10, obstacle_probability=0.85, fps=1)
     mazeExploration.render()
     for i in range(10):
         # Randomly select an action.
-        rand_action = random.choice(list(AgentAction))
-        reward, terminated = mazeExploration.perform_action(rand_action)
-        print("Reward:", reward, "Terminated:", terminated)
+        rand_action = random.randint(0, 8)
+        reward, terminated, truncated = mazeExploration.perform_action(rand_action)
+        print("Reward:", reward, "Terminated:", terminated, "Truncated:", truncated)
         mazeExploration.render()
-        if terminated:
-            print("Maze completed!")
-            break
