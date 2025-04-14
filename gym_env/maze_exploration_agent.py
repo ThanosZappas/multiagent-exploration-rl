@@ -20,7 +20,7 @@ def create_maze(rows, columns, obstacle_probability=0.85):
     rows = int(rows / 2)
     columns = int(columns / 2)
 
-    maze = np.ones((rows * 2 + 1, columns * 2 + 1))
+    maze = np.ones((rows * 2, columns * 2))
     x, y = (0, 0)
     stack = [(x, y)]
     while len(stack) > 0:
@@ -229,7 +229,7 @@ class MazeExploration:
         # Render to the console.
         for row in range(self.grid_rows):
             for column in range(self.grid_columns):
-                if [row, column] == self.agent_position:
+                if np.array_equal((row, column),(self.agent_position)):
                     print(str(GridTile.AGENT), end=' ')
                 elif self.maze[row, column] == 1:
                     print(str(GridTile.WALL), end=' ')

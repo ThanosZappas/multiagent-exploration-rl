@@ -28,9 +28,10 @@ def train_sb3_ppo():
     model = PPO("MultiInputPolicy", env, verbose=1, device=device, tensorboard_log=log_dir)
 
     # Training loop
-    TIMESTEPS = 1000
-    for iters in range(500):
-        model.learn(total_timesteps=TIMESTEPS, reset_num_timesteps=False)
+    TIMESTEPS = 10000
+    ACTUAL_TIMESTEPS = int(TIMESTEPS/2)
+    for iters in range(50):
+        model.learn(total_timesteps=ACTUAL_TIMESTEPS, reset_num_timesteps=False, progress_bar=True)
         
         # # Save model periodically
         # if iters % 10 == 0:
@@ -39,7 +40,7 @@ def train_sb3_ppo():
         #     model.save(f"{save_path}/ppo_{TIMESTEPS * (iters+1)}")
 
     # Final save
-    model.save(f"{model_dir}/PPO_{time}/final_model")
+    # model.save(f"{model_dir}/PPO_{time}/final_model")
     
     # Test the trained model
     observation, info = env.reset()  # Use the existing env instance
@@ -48,7 +49,9 @@ def train_sb3_ppo():
     
     while not (done or truncated):
         action, _states = model.predict(observation)
+        action = int(action.item())  # Add this line to convert numpy array to integer
         observation, rewards, done, truncated, info = env.step(action)
+        print("agent view: \n", observation.get('grid'))    
         env.render()
     
     env.close()

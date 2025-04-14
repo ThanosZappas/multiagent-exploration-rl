@@ -1,3 +1,4 @@
+from math import e
 import re
 from turtle import distance, update
 from arrow import get
@@ -26,7 +27,7 @@ class MazeExplorationEnv(gym.Env):
     def __init__(self, grid_rows=10, grid_columns=10, render_mode=None):
         self.grid_rows = grid_rows
         self.grid_columns = grid_columns
-        self.agent_view = np.zeros((self.grid_rows, self.grid_columns), dtype=int)
+        self.agent_view = np.zeros((self.grid_rows, self.grid_columns), dtype=np.int32)
         self.render_mode = render_mode
         self.max_distance = np.sqrt(np.square(self.grid_rows) + np.square(self.grid_columns))  # Maximum possible Euclidean distance
         # Initialize the MazeExploration problem
@@ -39,10 +40,10 @@ class MazeExplorationEnv(gym.Env):
         self.last_euclidean_distance = 1
         self.action_space = spaces.Discrete(len(self.maze_exploration.ACTION_MAP))
 
-        # Update observation space to include both the grid view and the distance
+        # Update observation space to include both the grid view and the distances from surrounding cells
         self.observation_space = spaces.Dict({
-            'grid': spaces.Box(low=0, high=1, shape=(grid_rows, grid_columns), dtype=np.int32),
-            'distance': spaces.Box(low=0, high=1, shape=(1,), dtype=np.float32)
+            'grid': spaces.Box(low=-1, high=1, shape=(grid_rows, grid_columns), dtype=np.int32),
+            'distances': spaces.Box(low=0, high=1, shape=(9,), dtype=np.float32)  # 9 cells (3x3 grid including agent position)
         })
       
     def _calculate_new_target(self):
@@ -93,62 +94,102 @@ class MazeExplorationEnv(gym.Env):
                 row = agent_row + i
                 col = agent_column + j
                 if 0 <= row < self.grid_rows and 0 <= col < self.grid_columns:
-                    self.agent_view[row, col] = 1  # Mark cells AROUND the agent as seen
-        return self.agent_view
+                    if self.maze[row, col] == 0:
+                        self.agent_view[row, col] = 1  # Mark explorable cells as 1
+                    else:
+                        self.agent_view[row, col] = -1  # Mark obstacles as -1
+
         
     def step(self, action):
+        # Get initial observation before action
+        observation = self._calculate_observation()
+        
+        # Perform action and get basic reward
         reward, terminated, truncated = self.maze_exploration.perform_action(action)
         
-           
-        # Update the agent's view
-        self._update_agent_view()
-        # Check if the agent has explored the maze
-        if np.all(self.agent_view == 1):
-            terminated = True
-            reward += 10
-            observation = {}
-        else:
-            if self.target_position is not None:
-                if self.agent_view[self.target_position] == 1:
-                    # The agent has found the target
-                    self.target_position = self._calculate_new_target()
-                    reward += 1
-
+        # Update agent's view if not terminated
+        if not (terminated or truncated):
+            self._update_agent_view()
+            
+            # Check if maze is fully explored
+            if np.all(abs(self.agent_view) == 1):
+                terminated = True
+                reward += self.grid_rows  # Big reward for completing exploration
+            
+            elif self.target_position is not None:
+                # Get updated observation after movement
                 observation = self._calculate_observation()
+                current_distance = observation['distances'][4]
+                
+                # Calculate distance-based reward
+                if current_distance < self.last_euclidean_distance:
+                    distance_reward = 0.5 * (self.last_euclidean_distance - current_distance)
+                    reward += distance_reward
+                else:
+                    distance_penalty = 0.2 * (current_distance - self.last_euclidean_distance)
+                    reward -= distance_penalty
+                
+                self.last_euclidean_distance = current_distance
+                
+                # Check if reached target
+                if self.agent_view[self.target_position] == 1:
+                    reward += 1
+                    self.target_position = self._calculate_new_target()
+                
 
-                # else:
-                #     # The agent has not found the target
-                #     # Add reward for moving closer to the target
-                #     current_distance = observation['distance'][0]
-                #     reward += (1 - current_distance)  # Reward is higher when distance is smaller
-                #     self.last_euclidean_distance = current_distance
-        if self.render_mode == 'human':
-            print(action)
-            self.render()
-
-    
         return observation, reward, terminated, truncated, self._get_info()
 
     def _calculate_observation(self):
-        # Update the agent's position
         self.agent_position = self.maze_exploration.agent_position
         agent_row, agent_column = self.agent_position
-        # Create an observation of the maze with the agent's view
-        self._update_agent_view()
-        # Check if the agent has explored the maze
-        if np.all(self.agent_view == 1):
-            self.target_position = None
-            return {'grid' : self.agent_view, 'distance': np.array([0], dtype=np.float32)}
         
-        # Calculate Euclidean distance to the target position
+        # Update cumulative agent view (using -1 for obstacles, 1 for explored spaces)
+        self._update_agent_view()
+        
+        # If maze is fully explored
+        if np.all(np.abs(self.agent_view) == 1):  # Check both 1 and -1
+            self.target_position = None
+            return {
+                'grid': self.agent_view.astype(np.int32),
+                'distances': np.zeros(9, dtype=np.float32)
+            }
+
+        # Calculate distances from surrounding cells to target
         if self.target_position is None:
             self.target_position = self._calculate_new_target()
-            print("Target position is None")
-        target_row, target_column = self.target_position # type: ignore
-        euclidean_distance = np.linalg.norm([target_row - agent_row, target_column - agent_column])
-        euclidean_distance /= self.max_distance  # Scale distance to [0, 1]
 
-        return {'grid' : self.agent_view.astype(np.int32), 'distance': np.array([euclidean_distance], dtype=np.float32)}
+        # If no target position is found, return zeros for distances
+        # This can happen if the maze is fully explored
+        if self.target_position is None:
+            return {
+                'grid': self.agent_view.astype(np.int32),
+                'distances': np.zeros(9, dtype=np.float32)
+            }
+        
+        target_row, target_column = self.target_position
+        surrounding_distances = []
+        
+        # Calculate distances for 3x3 grid around agent (including agent's position)
+        for i in range(-1, 2):
+            for j in range(-1, 2):
+                row = agent_row + i
+                col = agent_column + j
+                
+                if (0 <= row < self.grid_rows and 
+                    0 <= col < self.grid_columns and 
+                    self.maze[row, col] == 0):  # If valid and not obstacle
+                    # Calculate Euclidean distance from this cell to target
+                    dist = np.linalg.norm([target_row - row, target_column - col])
+                    dist /= self.max_distance  # Normalize distance
+                else:
+                    dist = 1.0  # Max distance for obstacles or out-of-bounds
+                
+                surrounding_distances.append(dist)
+
+        return {
+            'grid': self.agent_view.astype(np.int32),
+            'distances': np.array(surrounding_distances, dtype=np.float32)
+        }
     
     # Gym required function to render environment
     def render(self):
