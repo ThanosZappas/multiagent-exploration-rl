@@ -2,10 +2,24 @@ import os
 import datetime
 
 import gymnasium as gym
+import numpy as np
+from regex import P
+from sqlalchemy import TIME
 from stable_baselines3 import PPO
 from stable_baselines3.common.policies import ActorCriticPolicy
 
 import maze_exploration_env
+ACTION_MAP = {
+    0: 'UP_LEFT',  # Move diagonally up and left
+    1: 'UP',       # Move up
+    2: 'UP_RIGHT', # Move diagonally up and right
+    3: 'LEFT',     # Move left
+    4: 'STAY',     # Stay in place
+    5: 'RIGHT',    # Move right
+    6: 'DOWN_LEFT', # Move diagonally down and left
+    7: 'DOWN',     # Move down
+    8: 'DOWN_RIGHT' # Move diagonally down and right
+}
 
 # Train using StableBaseline3 with PPO
 def train_sb3_ppo():
@@ -29,9 +43,8 @@ def train_sb3_ppo():
 
     # Training loop
     TIMESTEPS = 10000
-    ACTUAL_TIMESTEPS = int(TIMESTEPS/2)
     for iters in range(50):
-        model.learn(total_timesteps=ACTUAL_TIMESTEPS, reset_num_timesteps=False, progress_bar=True)
+        model.learn(total_timesteps=TIMESTEPS, reset_num_timesteps=False)
         
         # # Save model periodically
         # if iters % 10 == 0:
@@ -46,14 +59,26 @@ def train_sb3_ppo():
     observation, info = env.reset()  # Use the existing env instance
     done = False
     truncated = False
-    
+    step = 1
     while not (done or truncated):
         action, _states = model.predict(observation)
         action = int(action.item())  # Add this line to convert numpy array to integer
         observation, rewards, done, truncated, info = env.step(action)
-        print("agent view: \n", observation.get('grid'))    
+        print('\n------------------------------------------------------------------------------------------------------------------------------\n')
+        print(f"Step: {step}, Action: {ACTION_MAP.get(action)}, Reward: {rewards} \n")
+        print("Game Status:\n")
         env.render()
-    
+        np.set_printoptions(formatter={'int': lambda x: f'{x:2d}'})
+        print("Agent`s View: \n")
+        for row in observation.get('grid'):
+            print(' '.join(f'{x:>3}' for x in row))
+        step += 1
+        if done:
+            print("Episode finished")
+            break
+        if truncated:
+            print("Episode truncated")
+            break
     env.close()
 
 def predict_sb3_model(model_path):

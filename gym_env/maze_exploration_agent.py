@@ -4,6 +4,7 @@ maze."""
 
 import random
 from enum import Enum
+import re
 
 from networkx import difference
 import numpy as np
@@ -107,7 +108,7 @@ class MazeExploration:
         self.fps = fps
         self.last_action = ''
         self.game_steps = 0
-        self.MAX_STEPS = 1000
+        self.MAX_STEPS = grid_rows * grid_columns  # Maximum number of steps before termination
         self._init_pygame()
         self.reset()
 
@@ -150,9 +151,11 @@ class MazeExploration:
         img = pygame.image.load(file_name)
         self.wall_img = pygame.transform.scale(img, self.cell_size)
 
-    def reset(self, seed=None):
+    def reset(self, seed=None, options=None,random_mazes=True):
         # Generate a new maze using create_maze.
-        self.maze = create_maze(self.input_rows, self.input_columns, self.obstacle_probability)
+        if random_mazes:
+            # Generate a new maze with the specified dimensions and obstacle probability.
+            self.maze = create_maze(self.input_rows, self.input_columns, self.obstacle_probability)
         # Update grid dimensions from the generated maze.
         self.grid_rows, self.grid_columns = self.maze.shape
         self.steps = 0
@@ -184,7 +187,8 @@ class MazeExploration:
         new_row = self.agent_position[0] + action_row
         new_column = self.agent_position[1] + action_column
 
-        reward = 0.0  # Default reward for a step. 0 for no step penalty.
+        # reward = 0.0
+        reward = -0.25  # Default reward for a step. 0 for no step penalty.
         truncated = False
         terminated = False
 
@@ -196,7 +200,7 @@ class MazeExploration:
         else:
             # Penalize collision with obstacle
             #print("Collision")
-            reward -= -1.0
+            reward -= 1.0
             terminated = True
             return reward, terminated, truncated
     
@@ -208,33 +212,17 @@ class MazeExploration:
             return reward, terminated, truncated
         
         return reward, terminated, truncated
-    
-        # # Reward new free cell visits.
-        # if not self.visited[new_row, new_column]:
-        #     self.visited[new_row, new_column] = True
-        #     reward += 0  # Small reward for a new cell.
-        
-        # # Check if all free cells have been visited.
-        # # Only count cells where maze == 0.
-        # free_cell_indices = (self.maze == 0)
-        # if np.all(self.visited[free_cell_indices]):
-        #     reward += float(np.sum(free_cell_indices) * 10)  # Big reward for task completion.
-        #     terminated = True
-        # else:
-        #     terminated = False
-
-        # return reward, terminated
 
     def render(self):
         # Render to the console.
         for row in range(self.grid_rows):
             for column in range(self.grid_columns):
                 if np.array_equal((row, column),(self.agent_position)):
-                    print(str(GridTile.AGENT), end=' ')
+                    print(f'{str(GridTile.AGENT):>3}', end=' ')
                 elif self.maze[row, column] == 1:
-                    print(str(GridTile.WALL), end=' ')
+                    print(f'{str(GridTile.WALL):>3}', end=' ')
                 else:
-                    print(str(GridTile.FLOOR), end=' ')
+                    print(f'{str(GridTile.FLOOR):>3}', end=' ')
             print()
         print()
 

@@ -1,12 +1,13 @@
 from math import e
 import re
 from turtle import distance, update
-from arrow import get
+# from arrow import get
 import gymnasium as gym
 from gymnasium import make, spaces
 from gymnasium.envs.registration import register
 from gymnasium.utils.env_checker import check_env
 from matplotlib.pyplot import grid
+from torch import rand
 
 import maze_exploration_agent as agent
 import numpy as np
@@ -14,7 +15,7 @@ import numpy as np
 # Register this module as a gym environment. Once registered, the id is usable in gym.make().
 register(
     id='maze-exploration-v0',  # call it whatever you want
-    entry_point='maze_exploration_env:MazeExplorationEnv',  # module_name:class_name
+    entry_point='maze_exploration_env:MazeExplorationEnv', # module_name:class_name
 )
 
 
@@ -23,8 +24,8 @@ class MazeExplorationEnv(gym.Env):
     # render_modes in our environment is either None or 'human'.
     # render_fps is not used in our env, but we are require to declare a non-zero value.
     metadata = {"render_modes": ["human"], 'render_fps': 1}
-
     def __init__(self, grid_rows=10, grid_columns=10, render_mode=None):
+        self.random_mazes = False # Set to True for random maze generation
         self.grid_rows = grid_rows
         self.grid_columns = grid_columns
         self.agent_view = np.zeros((self.grid_rows, self.grid_columns), dtype=np.int32)
@@ -33,7 +34,7 @@ class MazeExplorationEnv(gym.Env):
         # Initialize the MazeExploration problem
         self.maze_exploration = agent.MazeExploration(grid_rows=grid_rows, grid_columns=grid_columns,
                                                       obstacle_probability=0.85)
-        self.maze_exploration.reset()
+        self.maze_exploration.reset() 
         self.maze = self.maze_exploration.maze
         self.agent_position = self.maze_exploration.agent_position
         self.target_position = self._calculate_new_target()
@@ -70,9 +71,10 @@ class MazeExplorationEnv(gym.Env):
 
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
-        self.maze_exploration.reset(seed=seed)
+        self.maze_exploration.reset(seed=seed, random_mazes=self.random_mazes)
+        self.maze = self.maze_exploration.maze
         self.last_euclidean_distance=1
-        self.agent_view = np.zeros((self.grid_rows, self.grid_columns), dtype=int)
+        self.agent_view = np.zeros((self.grid_rows, self.grid_columns), dtype=np.int32)
         self.agent_position = self.maze_exploration.agent_position
         observation = self._calculate_observation()
         self.target_position = self._calculate_new_target()
