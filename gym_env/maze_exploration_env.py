@@ -60,7 +60,8 @@ class MazeExplorationEnv(gym.Env):
         for row in range(self.grid_rows):
             for column in range(self.grid_columns):
                 # Check if the position is valid and not explored
-                if self.maze[row, column] == 0 and self.agent_view[row, column] == 0:
+                # if self.maze[row, column] == 0 and self.agent_view[row, column] == 0:
+                if self.agent_view[row, column] == 0:
                     # Calculate the Euclidean distance to the agent's position
                     distance = ((row - agent_row)**2 + (column - agent_column)**2)
                     # Check if the distance is less than the minimum distance found so far
@@ -113,10 +114,11 @@ class MazeExplorationEnv(gym.Env):
         if not (terminated or truncated):
             self._update_agent_view()
             
+            
             # Check if maze is fully explored
             if np.all(abs(self.agent_view) == 1):
                 terminated = True
-                reward += self.grid_rows  # Big reward for completing exploration
+                reward = self.grid_rows  # Big reward for completing exploration
             
             elif self.target_position is not None:
                 # Get updated observation after movement
@@ -137,7 +139,8 @@ class MazeExplorationEnv(gym.Env):
                 if self.agent_view[self.target_position] == 1:
                     reward += 1
                     self.target_position = self._calculate_new_target()
-                
+            else:
+                reward -= 1.0  # Penalty for termination or truncation
 
         return observation, reward, terminated, truncated, self._get_info()
 

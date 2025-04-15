@@ -200,7 +200,6 @@ class MazeExploration:
         else:
             # Penalize collision with obstacle
             #print("Collision")
-            reward -= 1.0
             terminated = True
             return reward, terminated, truncated
     
@@ -208,7 +207,6 @@ class MazeExploration:
         # Max steps reached. Penalize and terminate.
         if self.steps >= self.MAX_STEPS:    
             truncated = True
-            reward -= 1.0
             return reward, terminated, truncated
         
         return reward, terminated, truncated
