@@ -23,7 +23,7 @@ register(
 class MazeExplorationEnv(gym.Env):
     metadata = {"render_modes": ["human"]}
     
-    def __init__(self, grid_map, range_gs = False, max_steps=150):
+    def __init__(self, grid_map, range_gs=False, max_steps=300, channels=1):
         super(MazeExplorationEnv, self).__init__()
 
         self.grid_map = np.array(grid_map)
@@ -32,30 +32,42 @@ class MazeExplorationEnv(gym.Env):
         self.target_position = None
         self.range_gs = range_gs
         self.action_space = spaces.Discrete(8)
+        self.channels = channels
 
         self.agent_view = self._reset_agent_view()
-        
-        self.observation_space = spaces.Box(low=0, high=4, shape=(1, self.num_rows, self.num_cols), dtype=np.uint8)
-
         self.fig = None
         self.ax = None
-        # self.last_euclidean_distance=1
         self.steps = 0
         self.max_steps = max_steps
 
-        
+        # Set observation space based on channels
+        if self.channels == 1:
+            self.observation_space = spaces.Box(
+                low=0, high=4, shape=(1, self.num_rows, self.num_cols), dtype=np.uint8
+            )
+        else:
+            self.observation_space = spaces.Box(
+                low=0, high=1, shape=(3, self.num_rows, self.num_cols), dtype=np.uint8
+            )
+
     def _calculate_observation(self):
-        
         self._update_agent_view()
-        
-        # If maze is fully explored
-        if np.all(self.agent_view != 0):  # Check if all cells are explored
-            self.target_position = None
-            return self._transform_obs(self.agent_view) 
+        if self.channels == 1:
+            obs = np.expand_dims(self.agent_view.astype(np.uint8), axis=0)
+        else:
+            # Channel 0: Explored mask (1 if explored, else 0)
+            explored_mask = (self.agent_view == MazeElements.EXPLORED).astype(np.uint8)
             
-        self.agent_view[self.target_position] = MazeElements.TARGET  # Mark target position as 3
+            # Channel 1: Discovered obstacles (1 if discovered obstacle, else 0)
+            obstacle_mask = (self.agent_view == MazeElements.OBSTACLE).astype(np.uint8)
             
-        return self._transform_obs(self.agent_view)
+            # Channel 2: Agent position (1 if agent, else 0)
+            agent_mask = np.zeros_like(explored_mask, dtype=np.uint8)
+            agent_row, agent_col = self.agent_position
+            agent_mask[agent_row, agent_col] = 1
+            
+            obs = np.stack([explored_mask, obstacle_mask, agent_mask], axis=0)
+        return obs
      
 
     def reset(self, seed=None, options=None):
@@ -71,6 +83,7 @@ class MazeExplorationEnv(gym.Env):
         
 
         self.steps = 0
+        self.terminated = False
 
         if self.range_gs:
             _, width = self.grid_map.shape
@@ -79,7 +92,109 @@ class MazeExplorationEnv(gym.Env):
         info ={}
         # info = self._get_info()
         return observation, info
+    
 
+    # paper 3
+    
+    # def _calculate_potential_map(self):
+    #     """Calculate a potential field map to guide exploration.
+    #     Higher values indicate more desirable positions to explore."""
+    #     # Start with a basic potential map based on unexplored cells
+    #     potential_map = np.zeros_like(self.agent_view, dtype=float)
+        
+    #     # Unexplored cells have high potential
+    #     unexplored_mask = (self.agent_view == MazeElements.UNEXPLORED).astype(float)
+    #     potential_map += unexplored_mask * 10.0
+        
+    #     # Obstacles have zero potential (already set to 0)
+        
+    #     # Apply distance transform to make cells closer to unexplored areas more valuable
+    #     from scipy.ndimage import distance_transform_edt
+    #     distance_to_unexplored = distance_transform_edt(1 - unexplored_mask)
+    #     # Normalize and invert so closer to unexplored = higher potential
+    #     if np.max(distance_to_unexplored) > 0:
+    #         normalized_distance = 1 - (distance_to_unexplored / np.max(distance_to_unexplored))
+    #         potential_map += normalized_distance * 5.0
+        
+    #     return potential_map
+
+    # def step(self, action):
+        # Prevent stepping after termination
+        if hasattr(self, "terminated") and self.terminated:
+            return self._calculate_observation(), 0.0, True, False, {}
+
+        self.steps += 1
+        terminated = False
+        truncated = False
+
+        # Parameters for potential-based reward
+        R_POS = 0.5    # Positive reward when moving to higher potential
+        R_NEG = -0.2   # Negative reward when moving to lower potential
+        R_WALL = -1.0  # Penalty for hitting a wall
+        R_FINAL = 10.0 # Reward for full coverage
+        
+        # Calculate potential map
+        potential_map = self._calculate_potential_map()
+        
+        # Get current position's potential
+        old_position = self.agent_position
+        old_potential = potential_map[old_position]
+        
+        # Convert action and calculate new position
+        action_row, action_column = self._action_to_direction(action)
+        new_row = self.agent_position[0] + action_row
+        new_column = self.agent_position[1] + action_column
+        new_position = (new_row, new_column)
+        
+        # Check max steps
+        if self.steps >= self.max_steps:
+            truncated = True
+            reward = R_NEG
+            return self._calculate_observation(), reward, terminated, truncated, {}
+        
+        # Check if new position is a wall (1 in grid_map)
+        if self.grid_map[new_row, new_column] == 1:
+            reward = R_WALL
+            terminated = True
+            return self._calculate_observation(), reward, terminated, truncated, {}
+        
+        # Move agent if no collision
+        self.agent_position = new_position
+        
+        # Update view and count newly explored cells
+        prev_explored = np.sum(self.agent_view == MazeElements.EXPLORED)
+        self._update_agent_view()
+        new_explored = np.sum(self.agent_view == MazeElements.EXPLORED)
+        newly_explored = new_explored - prev_explored
+        
+        # Calculate coverage
+        coverage = self.calculate_coverage()
+        
+        # Check if the agent has fully explored the maze
+        if coverage >= 1.0:
+            terminated = True
+            self.terminated = True
+            reward = R_FINAL
+        else:
+            # Calculate reward based on potential field
+            new_potential = potential_map[new_position]
+            
+            # Apply the reward logic from the pseudocode
+            # if PNew==0 then (if the new position is valid/explorable)
+            if newly_explored > 0:
+                reward = R_POS
+            else:
+                if old_potential > new_potential:
+                    reward = R_NEG
+                else:
+                    reward = R_POS
+
+        return self._calculate_observation(), reward, terminated, truncated, {
+            "is_success": terminated and coverage >= 1.0,
+            "steps": self.steps,
+            "coverage": coverage
+        }
+    
     def step(self, action):
         self.steps += 1
         reward = -0.1  # Initialize reward
@@ -173,27 +288,39 @@ class MazeExplorationEnv(gym.Env):
         index = np.random.choice(len(valid_positions))
         return valid_positions[index]
 
-    def _calculate_new_target(self): #Closest unexplored cell
+    def _calculate_new_target(self): 
         # Get the agent's current position
         agent_row, agent_column = self.agent_position
-        
-        # Find the closest valid and not explored position in the maze
-        closest_target = None
-        min_distance = float('inf')
-        
-        # Only consider inner cells (exclude outer edges)
-        for row in range(1, self.num_rows - 1):
-            for column in range(1, self.num_cols - 1):
-                # Check if the position is unexplored
-                if self.agent_view[row, column] == MazeElements.UNEXPLORED:
-                    # Calculate the Euclidean distance to the agent's position
-                    distance = ((row - agent_row)**2 + (column - agent_column)**2)
-                    # Check if the distance is less than the minimum distance found so far
-                    if distance < min_distance:
-                        min_distance = distance
-                        closest_target = (row, column)
-                        
-        return closest_target
+        algorithm = "closest"  # Closest unexplored cell
+        # algorithm = "random" # Random unexplored cell
+        new_target = None
+        if algorithm == "closest":
+            # Find the closest valid and not explored position in the maze
+            closest_target = None
+            min_distance = float('inf')
+            
+            # Only consider inner cells (exclude outer edges)
+            for row in range(1, self.num_rows - 1):
+                for column in range(1, self.num_cols - 1):
+                    # Check if the position is unexplored
+                    if self.agent_view[row, column] == MazeElements.UNEXPLORED:
+                        # Calculate the Euclidean distance to the agent's position
+                        distance = ((row - agent_row)**2 + (column - agent_column)**2)
+                        # Check if the distance is less than the minimum distance found so far
+                        if distance < min_distance:
+                            min_distance = distance
+                            closest_target = (row, column)
+            new_target = closest_target
+        else:
+            # Find a random unexplored position in the maze
+            unexplored_positions = np.argwhere(self.agent_view == MazeElements.UNEXPLORED)
+            if len(unexplored_positions) > 0:
+                index = np.random.choice(len(unexplored_positions))
+                new_target = tuple(unexplored_positions[index])
+            else:
+                new_target = None
+
+        return new_target
     
     def _get_info(self):
         info = {"agent_position": self.agent_position, "target_position": self.target_position}

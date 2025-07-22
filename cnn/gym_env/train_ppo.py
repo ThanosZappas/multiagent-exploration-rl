@@ -61,9 +61,9 @@ model = PPO(
         train_env,
         policy_kwargs=policy_kwargs,
         verbose=1,
-        # ent_coef=0.005,
-        # gamma=0.99,
-        # n_steps=128,
+        ent_coef=0.005,
+        gamma=0.99,
+        n_steps=128,
         tensorboard_log=log_dir,
         device=device
         )
