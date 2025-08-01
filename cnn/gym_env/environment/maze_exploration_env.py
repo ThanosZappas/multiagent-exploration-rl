@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import gymnasium as gym
 from gymnasium import spaces
 from gymnasium.envs.registration import register
-from common import maze_generator as maze_generator
+from common import create_maze 
 
 # Register this module as a gym environment. Once registered, the id is usable in gym.make().
 register(
@@ -16,87 +16,107 @@ register(
 class MazeExplorationEnv(gym.Env):
     metadata = {"render_modes": ["human"]}
     
-    def __init__(self, grid_map=None, max_steps=300, channels=3, difficulty_level=1):
+    def __init__(self, rows = 10, columns = 10, max_steps=300, channels=4, difficulty_level=1):
         super(MazeExplorationEnv, self).__init__()
 
-        # Curriculum configuration
         self.difficulty_config = {
-            1: {"maze_density": 0.15, "target_mode": "fixed", "random_start": False},     # Very open, few walls
-            2: {"maze_density": 0.35, "target_mode": "random", "random_start": False},    # Some corridors
-            3: {"maze_density": 0.55, "target_mode": "random", "random_start": True},     # Moderate complexity
-            4: {"maze_density": 0.70, "target_mode": "near_unexplored", "random_start": True},  # Complex paths
-            5: {"maze_density": 0.85, "target_mode": "near_unexplored", "random_start": True},  # Dense maze
+            1: {
+                "maze_density": 0.15,
+                "target_mode": "near_unexplored",      # Close, rewarding targets for early learning
+                "agent_start_mode": "fixed"            # Always start at same position (e.g. [1,1])
+            },
+            2: {
+                "maze_density": 0.35,
+                "target_mode": "near_unexplored",      # Guided targets still useful
+                "agent_start_mode": "fixed"
+            },
+            3: {
+                "maze_density": 0.55,
+                "target_mode": "random",               # Introduce randomness and encourage generalization
+                "agent_start_mode": "random"
+            },
+            4: {
+                "maze_density": 0.70,
+                "target_mode": "random",               # Harder mazes, random targets
+                "agent_start_mode": "random"
+            },
+            5: {
+                "maze_density": 0.85,
+                "target_mode": "random",               # Dense maze, fully randomized behavior
+                "agent_start_mode": "random"
+            },
         }
+
         
         self.difficulty_level = difficulty_level
         self.current_config = self.difficulty_config[difficulty_level]
         
-        # Initialize base grid (10x10 with outer walls)
-        if grid_map is None:
-            self.base_grid = maze_generator.empty_maze()
-            self.base_grid = maze_generator.init()
-        else:
-            self.base_grid = np.array(grid_map)
-                   
-        self.grid_map = self.base_grid.copy()
-        self.num_rows, self.num_cols = self.grid_map.shape
+        self.grid_map = create_maze(rows, columns, self.current_config["maze_density"])
+    
+        self.num_rows, self.num_cols = rows, columns
         
         # Initialize positions and state
-        self.agent_position = None
-        self.target_position = None
+        self.set_agent_position(self)
+        self.target_position = self._calculate_new_target(self)
         self.fixed_target_position = (1, 2)  # Fixed target for level 1
         self.action_space = spaces.Discrete(4)  # Only cardinal directions: up, right, down, left
         self.channels = channels
-        self.agent_lives = 3  # Number of lives for obstacle collisions
-        self.agent_view = self._reset_agent_view()
+        self.agent_lives = 2  # Number of lives for obstacle collisions
+        self.agent_view = self._reset_agent_view(self)
         self.coverage_grid = np.zeros_like(self.grid_map)  # Track explored areas
-        self.fig = None
-        self.ax = None
         self.steps = 0
         self.max_steps = max_steps
 
         # Set observation space based on channels
         if self.channels == 1:
             self.observation_space = spaces.Box(
-                low=0, high=4, shape=(1, self.num_rows, self.num_cols), dtype=np.uint8
+                low=0, high=4, shape=(1, self.num_rows, self.num_cols), dtype=np.float32
             )
         else:
             self.observation_space = spaces.Box(
-                low=0, high=1, shape=(3, self.num_rows, self.num_cols), dtype=np.uint8
+                low=0, high=1, shape=(4, self.num_rows, self.num_cols), dtype=np.float32
             )
 
     def _calculate_observation(self):
         self._update_agent_view()
         if self.channels == 1:
-            obs = np.expand_dims(self.agent_view.astype(np.uint8), axis=0)
+            obs = np.expand_dims(self.agent_view.astype(np.float32), axis=0)
         else:
-            # Channel 0: Explored mask (1 if explored, else 0)
-            explored_mask = (self.agent_view == MazeElements.EXPLORED).astype(np.uint8)
+            # Channel 1: Explored mask (1 if explored, else 0)
+            explored_mask = (self.agent_view == MazeElements.EXPLORED).astype(np.float32)
             
-            # Channel 1: Discovered obstacles (1 if discovered obstacle, else 0)
-            obstacle_mask = (self.agent_view == MazeElements.OBSTACLE).astype(np.uint8)
+            # Channel 2: Discovered obstacles (1 if discovered obstacle, else 0)
+            obstacle_mask = (self.agent_view == MazeElements.OBSTACLE).astype(np.float32)
             
-            # Channel 2: Agent position (1 if agent, else 0)
-            agent_mask = np.zeros_like(explored_mask, dtype=np.uint8)
+            # Channel 3: Agent position (1 if agent, else 0)
+            agent_mask = np.zeros_like(explored_mask, dtype=np.float32)
             agent_row, agent_col = self.agent_position
             agent_mask[agent_row, agent_col] = 1
             
-            obs = np.stack([explored_mask, obstacle_mask, agent_mask], axis=0)
+            # Channel 4: Target Position (1 if target, else 0)
+            target_mask = np.zeros_like(explored_mask, dtype=np.float32)
+            target_row, target_col = self.target_position
+            target_mask[target_row, target_col] = 1
+            # Stack all channels together
+            obs = np.stack([explored_mask, obstacle_mask, agent_mask, target_mask], axis=0)
         return obs
-     
-
-    def reset(self, seed=None, options=None):
-        super().reset(seed=seed)
-        
-        # Generate new obstacle layout based on difficulty level
-        maze_generator.init()
-        
+    
+    def set_agent_position(self):
         # Set agent starting position based on difficulty config
         if self.current_config["random_start"]:
             self.agent_position = self._random_position()
         else:
             self.agent_position = (1, 2)  # Fixed starting position for easier levels
         
+
+    def reset(self, seed=None, options=None):
+        super().reset(seed=seed)
+        
+        # Generate new obstacle layout based on difficulty level
+        create_maze()
+        
+        self.set_agent_position(self)
+
         # Reset agent view and coverage
         self.agent_view = self._reset_agent_view()
         self.coverage_grid = np.zeros_like(self.grid_map)
@@ -146,7 +166,6 @@ class MazeExplorationEnv(gym.Env):
                 return self._calculate_observation(), reward, terminated, truncated, {}
 
         # Move agent if no collision
-        old_position = self.agent_position
         self.agent_position = (new_row, new_column)
         
         # Update coverage grid (mark surrounding cells as explored)
@@ -187,7 +206,7 @@ class MazeExplorationEnv(gym.Env):
                     print(f'{str(GridTile.AGENT):>3}', end=' ')
                 elif self.grid_map[row, column] == 1:
                     print(f'{str(GridTile.OBSTACLE):>3}', end=' ')
-                elif np.array_equal((row, column), (self.target_position)): #TODO: Fix this not showing target
+                elif np.array_equal((row, column), (self.target_position)):
                     print(f'{str(GridTile.TARGET):>3}', end=' ')
                 else:
                     print(f'{str(GridTile.FLOOR):>3}', end=' ')
@@ -201,19 +220,20 @@ class MazeExplorationEnv(gym.Env):
         return tuple(valid_positions[index])  # Convert to tuple for consistent comparison
 
 
-    def _calculate_new_target(self): 
+    def _calculate_new_target(self):
         """Calculate new target position based on difficulty configuration"""
-        target_mode = self.current_config["target_mode"]
+        target_mode = self.current_config.get("target_mode", "random")
         
-        if target_mode == "fixed":
-            return self.fixed_target_position
-        elif target_mode == "random":
+        if target_mode == "random":
             return self._random_position()
         elif target_mode == "near_unexplored":
             return self._sample_near_unexplored()
+        elif target_mode == "path_based":
+            return self._plan_target_path()
         else:
-            # Default fallback
-            return self._random_position()    
+            # Default fallback — random is safest
+            return self._random_position()
+
 
     
     def _reset_agent_view(self):
@@ -272,31 +292,25 @@ class MazeExplorationEnv(gym.Env):
 
 
     def _sample_near_unexplored(self, radius=2):
-        """Sample target position near unexplored areas"""
-        # Find unexplored cells (excluding walls and obstacles)
-        unexplored = []
-        for row in range(1, self.num_rows - 1):
-            for col in range(1, self.num_cols - 1):
-                if (self.coverage_grid[row, col] == 0 and 
-                    self.grid_map[row, col] == 0):
-                    unexplored.append((row, col))
-        
-        if len(unexplored) == 0:
-            # If no unexplored areas, return any valid position
-            return self._random_position()
+        """Sample a target position near unexplored (0) and explorable (non-obstacle) areas."""
+        unexplored = [
+            (r, c)
+            for r in range(1, self.num_rows - 1)
+            for c in range(1, self.num_cols - 1)
+            if self.coverage_grid[r, c] == 0 and self.grid_map[r, c] == 0
+        ]
 
-        agent_row, agent_col = self.agent_position
-        # Find unexplored cells within radius
-        nearby = []
-        for row, col in unexplored:
-            if abs(row - agent_row) <= radius and abs(col - agent_col) <= radius:
-                nearby.append((row, col))
-        
-        # Return nearby unexplored cell if available, otherwise any unexplored cell
-        if nearby:
-            return random.choice(nearby)
-        else:
-            return random.choice(unexplored)
+        if not unexplored:
+            return self._random_position()  # Fallback if everything is explored
+
+        agent_r, agent_c = self.agent_position
+        nearby = [
+            (r, c) for (r, c) in unexplored
+            if abs(r - agent_r) <= radius and abs(c - agent_c) <= radius
+        ]
+
+        return random.choice(nearby if nearby else unexplored)
+
 
     def _get_info(self): 
         info = {"agent_position": self.agent_position, "target_position": self.target_position}

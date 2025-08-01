@@ -13,11 +13,11 @@ from stable_baselines3.common.vec_env import DummyVecEnv
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.callbacks import EvalCallback
 from neural_networks.simple_cnn import Simple1ChannelCNN
+from neural_networks.advanced_cnn import CCNFeatureExtractor as CNN
 from environment.maze_exploration_env import MazeExplorationEnv
 
 
-
-def make_env(difficulty_level=1, grid_map=None):
+def make_env(difficulty_level=1):
     """Create environment with specified difficulty level"""
     def _init():
         env = gym.make("maze-exploration-v1", 
@@ -53,8 +53,8 @@ def train_curriculum():
     
     # Model setup
     policy_kwargs = dict(
-        features_extractor_class=Simple1ChannelCNN,
-        features_extractor_kwargs=dict(features_dim=64)
+        features_extractor_class=CNN,
+        features_extractor_kwargs=dict(features_dim=256)
     )
     
     model = None
@@ -66,8 +66,8 @@ def train_curriculum():
         print(f"{'='*60}")
         
         # Create environments for this level
-        train_env = DummyVecEnv([make_env(difficulty_level=level, grid_map=grid_map)])
-        eval_env = DummyVecEnv([make_env(difficulty_level=level, grid_map=grid_map)])
+        train_env = DummyVecEnv([make_env(difficulty_level=level)])
+        eval_env = DummyVecEnv([make_env(difficulty_level=level)])
         
         # Setup logging for this level
         level_log_dir = f"{base_log_dir}/level_{level}"
