@@ -1,7 +1,6 @@
 import numpy as np
 import random
 
-## TODO: Correct maze creation.
 
 def empty_maze():
     base_grid = np.zeros((10, 10))
@@ -42,7 +41,7 @@ def init(self):
 
         return self.grid_map
 
-def create_maze(rows, columns, obstacle_probability=0.85):
+def create_maze(rows, columns, obstacle_probability=0.50):
     """Generate a maze using DFS with configurable obstacle probability.
     
     Args:

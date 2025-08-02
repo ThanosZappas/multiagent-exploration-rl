@@ -5,7 +5,10 @@ import matplotlib.pyplot as plt
 import gymnasium as gym
 from gymnasium import spaces
 from gymnasium.envs.registration import register
-from common import create_maze 
+import os
+import sys
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from common.maze_generator import create_maze
 
 # Register this module as a gym environment. Once registered, the id is usable in gym.make().
 register(
@@ -56,14 +59,14 @@ class MazeExplorationEnv(gym.Env):
         self.num_rows, self.num_cols = rows, columns
         
         # Initialize positions and state
-        self.set_agent_position(self)
-        self.target_position = self._calculate_new_target(self)
+        self.set_agent_position()
+        self.coverage_grid = np.zeros_like(self.grid_map)  # Track explored areass
+        self.target_position = self._calculate_new_target()
         self.fixed_target_position = (1, 2)  # Fixed target for level 1
         self.action_space = spaces.Discrete(4)  # Only cardinal directions: up, right, down, left
         self.channels = channels
         self.agent_lives = 2  # Number of lives for obstacle collisions
-        self.agent_view = self._reset_agent_view(self)
-        self.coverage_grid = np.zeros_like(self.grid_map)  # Track explored areas
+        self.agent_view = self._reset_agent_view()
         self.steps = 0
         self.max_steps = max_steps
 
@@ -103,19 +106,18 @@ class MazeExplorationEnv(gym.Env):
     
     def set_agent_position(self):
         # Set agent starting position based on difficulty config
-        if self.current_config["random_start"]:
-            self.agent_position = self._random_position()
-        else:
+        agent_start_mode = self.current_config.get("agent_start_mode", "random")
+        if agent_start_mode == "fixed":
             self.agent_position = (1, 2)  # Fixed starting position for easier levels
-        
+        else:
+            self.agent_position = self._random_position()
 
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
         
         # Generate new obstacle layout based on difficulty level
-        create_maze()
-        
-        self.set_agent_position(self)
+        self.grid_map = create_maze(self.num_rows, self.num_cols, self.current_config["maze_density"])        
+        self.set_agent_position()
 
         # Reset agent view and coverage
         self.agent_view = self._reset_agent_view()

@@ -134,8 +134,7 @@ def evaluate_model(model_path, difficulty_level=5, episodes=10):
     
     # Create environment
     env = gym.make("maze-exploration-v1", 
-                   difficulty_level=difficulty_level,
-                   range_gs=False)
+                   difficulty_level=difficulty_level)
     
     # Load model
     model = PPO.load(model_path, env=env)
@@ -169,7 +168,8 @@ def evaluate_model(model_path, difficulty_level=5, episodes=10):
 
 if __name__ == "__main__":
     # Train using curriculum learning
-    final_model, model_dir = train_curriculum()
+    # final_model, model_dir = train_curriculum()
+    model_dir = "models/PPO_Curriculum_20250802-180645"  
     
     # Evaluate the final model on the hardest level
     print("\nEvaluating final model on Level 5...")
