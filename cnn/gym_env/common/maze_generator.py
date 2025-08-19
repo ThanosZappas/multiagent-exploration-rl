@@ -2,77 +2,26 @@ import numpy as np
 import random
 
 
-def empty_maze():
-    base_grid = np.zeros((10, 10))
-    base_grid[0, :] = 1  # Top wall
-    base_grid[-1, :] = 1  # Bottom wall
-    base_grid[:, 0] = 1  # Left wall
-    base_grid[:, -1] = 1  # Right wall
-    return base_grid
+def create_maze(rows, cols, obs_prob=0.85): #TODO FIX EVEN MAZE - IF ROWS AND COLS ARE ODD
+    rows = int(rows / 2)
+    cols = int(cols / 2)
 
-def init(self):
-        """Generate obstacles based on the current difficulty level"""
-        maze_density = self.current_config["maze_density"]
-        
-        # Generate maze with proper obstacle density using create_maze function
-        self.grid_map = create_maze(self.num_rows, self.num_cols, maze_density)
-        
-        # Clear starting area more aggressively for lower levels
-        if self.difficulty_level <= 3:  # Be more generous with clearing for first 3 levels
-            clear_radius = 4 - self.difficulty_level  # 3 cells for level 1, 2 for level 2, 1 for level 3
-            start_pos = (1, 2)  # Fixed starting position
-            for i in range(-clear_radius, clear_radius + 1):
-                for j in range(-clear_radius, clear_radius + 1):
-                    row = start_pos[0] + i
-                    col = start_pos[1] + j
-                    if (0 < row < self.num_rows - 1 and 
-                        0 < col < self.num_cols - 1):  # Don't clear outer walls
-                        self.grid_map[row, col] = 0
-                        
-        # Verify the final grid meets connectivity criteria
-        if not self._is_connected(self.grid_map):
-            # Try to repair the grid
-            self._ensure_connected_grid(self.grid_map)
-            
-            # If still not connected, fall back to base grid
-            if not self._is_connected(self.grid_map):
-                print("Warning: Generated maze was not fully connected. Using fallback grid.")
-                self.grid_map = self.base_grid.copy()
+    maze = np.ones((rows * 2, cols * 2))
 
-        return self.grid_map
-
-def create_maze(rows, columns, obstacle_probability=0.50):
-    """Generate a maze using DFS with configurable obstacle probability.
-    
-    Args:
-        rows (int): Number of rows in the maze
-        columns (int): Number of columns in the maze
-        obstacle_probability (float): Controls how many walls are kept:
-            - Low (0.15) = More open space (easier)
-            - High (0.85) = Dense maze (harder)
-    
-    Returns:
-        np.array: Generated maze with 0 (path) and 1 (wall)
-    """
-    # ...existing maze creation code...
-    inner_rows = (rows - 1) // 2
-    inner_cols = (columns - 1) // 2
-    
-    maze = np.ones((rows, columns))
-    
-    # Generate maze using DFS
     x, y = (0, 0)
+
     stack = [(x, y)]
     while len(stack) > 0:
         x, y = stack[-1]
+
         directions = [(0, 1), (1, 0), (0, -1), (-1, 0)]
         random.shuffle(directions)
+
         for dx, dy in directions:
             nx, ny = x + dx, y + dy
-            if (0 <= nx < inner_rows and 0 <= ny < inner_cols and 
-                maze[2 * nx + 1, 2 * ny + 1] == 1):
-                maze[2 * nx + 1, 2 * ny + 1] = 0
-                maze[2 * x + 1 + dx, 2 * y + 1 + dy] = 0
+            if nx >= 0 and ny >= 0 and nx < rows and ny < cols and maze[2 * nx , 2 * ny ] == 1:
+                maze[2 * nx , 2 * ny ] = 0
+                maze[2 * x  + dx, 2 * y  + dy] = 0
                 stack.append((nx, ny))
                 break
         else:
@@ -81,118 +30,151 @@ def create_maze(rows, columns, obstacle_probability=0.50):
     zero_indices = np.argwhere(maze == 0)
     zero_coords = [tuple(index) for index in zero_indices]
 
-    # Randomly remove walls based on probability
-    directions = [(0, 1), (1, 0), (0, -1), (-1, 0)]
+    directions = [(0, 1), (1, 0), (0, -1), (-1, 0)]  # adds randomly crosses of free space.
     for z in zero_coords:
-        if random.random() >= obstacle_probability:
+        if random.random() >= obs_prob:
             for dx, dy in directions:
                 nx, ny = z[0] + dx, z[1] + dy
-                if (0 < nx < rows - 1 and 0 < ny < columns - 1):
-                    maze[nx, ny] = 0
+                maze[nx, ny] = 0
 
-    # Ensure boundaries are walls
     maze[0, :] = 1
     maze[-1, :] = 1
     maze[:, 0] = 1
     maze[:, -1] = 1
 
-    # Clear starting area
-    maze[1:3, 1:4] = 0
+    # removes crosses (so agents wont be stuck).
+    for i in range(maze.shape[0]):
+        for j in range(maze.shape[1]):
+            walls = []
+            for d in directions:
+                neighbor_i = i + d[0]
+                neighbor_j = j + d[1]
+                # Check if neighbor is in bounds
+                if 0 <= neighbor_i < maze.shape[0] and 0 <= neighbor_j < maze.shape[1] and maze[
+                    (neighbor_i, neighbor_j)]:
+                    walls.append((neighbor_i, neighbor_j))
+            if len(walls) >= len(directions):
+                for coord in walls:
+                    maze[coord] = 0
 
+    # re-adds the boundaries (after cross removed).
+    maze[0, :] = 1
+    maze[-1, :] = 1
+    maze[:, 0] = 1
+    maze[:, -1] = 1
+
+    # Ensure the starting position is free
+    maze[1, 1] = 0  # Starting position (1,1) should be free
     return maze
 
-def _ensure_connected_grid(self, grid):
-        """Modify grid to ensure all free cells are connected"""
-        while not self._is_connected(grid):
-            # Find disconnected regions
-            start_pos = (1, 2)
-            visited = set()
-            
-            def flood_fill(pos):
-                row, col = pos
-                if (row < 0 or row >= self.num_rows or 
-                    col < 0 or col >= self.num_cols or 
-                    grid[row, col] == 1 or 
-                    pos in visited):
-                    return
-                
-                visited.add(pos)
-                for dr, dc in [(-1,0), (0,1), (1,0), (0,-1)]:  # Up, Right, Down, Left
-                    flood_fill((row + dr, col + dc))
-            
-            flood_fill(start_pos)
-            
-            # Find disconnected free cells
-            disconnected = []
-            for row in range(self.num_rows):
-                for col in range(self.num_cols):
-                    if grid[row, col] == 0 and (row, col) not in visited:
-                        disconnected.append((row, col))
-            
-            if not disconnected:
-                break
-                
-            # For each disconnected cell, try to create a path to the main region
-            for cell in disconnected:
-                row, col = cell
-                # Find closest visited cell
-                min_dist = float('inf')
-                best_path = None
-                
-                for vrow, vcol in visited:
-                    dist = abs(row - vrow) + abs(col - vcol)
-                    if dist < min_dist:
-                        min_dist = dist
-                        # Create direct path
-                        path = []
-                        curr_row, curr_col = row, col
-                        while (curr_row, curr_col) != (vrow, vcol):
-                            if curr_row < vrow:
-                                curr_row += 1
-                            elif curr_row > vrow:
-                                curr_row -= 1
-                            if curr_col < vcol:
-                                curr_col += 1
-                            elif curr_col > vcol:
-                                curr_col -= 1
-                            path.append((curr_row, curr_col))
-                        best_path = path
-                
-                # Create path by removing obstacles
-                if best_path:
-                    for prow, pcol in best_path:
-                        grid[prow, pcol] = 0
+def create_maze_plot(maze, save_path=None, title="Maze", figsize=(8, 8), show_grid=True):
+    """
+    Create a plot/PNG of the maze with walls as black and free cells as white.
+    
+    Args:
+        maze (np.array): 2D maze array where 1=wall/obstacle, 0=free cell
+        save_path (str, optional): Path to save the PNG file. If None, just displays
+        title (str): Title for the plot
+        figsize (tuple): Figure size (width, height)
+        show_grid (bool): Whether to show grid lines
+    
+    Returns:
+        matplotlib.figure.Figure: The generated figure
+    """
+    import matplotlib.pyplot as plt
+    import matplotlib.patches as patches
 
+    if save_path is not None:
+        save_path = "plots/" + title.replace(" ", "_").lower() + ".png"
 
-def _is_connected(self, grid):
-        """Check if all free cells in the grid are connected/reachable"""
-        def flood_fill(pos, visited):
-            row, col = pos
-            if (row < 0 or row >= self.num_rows or 
-                col < 0 or col >= self.num_cols or 
-                grid[row, col] == 1 or 
-                pos in visited):
-                return
-            
-            visited.add(pos)
-            # Check cardinal directions
-            for dr, dc in [(-1,0), (0,1), (1,0), (0,-1)]:  # Up, Right, Down, Left
-                flood_fill((row + dr, col + dc), visited)
-        
-        # Start flood fill from agent's starting position
-        start_pos = (1, 2)  # Default starting position
-        visited = set()
-        flood_fill(start_pos, visited)
-        
-        # Count all free cells
-        free_cells = set()
-        for row in range(self.num_rows):
-            for col in range(self.num_cols):
-                if grid[row, col] == 0:
-                    free_cells.add((row, col))
-        
-        # Check if all free cells were visited
-        return len(visited) == len(free_cells)
+    # Create figure and axis
+    fig, ax = plt.subplots(1, 1, figsize=figsize)
+    
+    # Create the maze visualization
+    # 0 (free cells) -> white (1.0)
+    # 1 (walls/obstacles) -> black (0.0)
+    maze_visual = 1 - maze  # Invert: 0->1 (white), 1->0 (black)
+    
+    # Display the maze
+    im = ax.imshow(maze_visual, cmap='gray', vmin=0, vmax=1, interpolation='nearest')
+    
+    # Set title
+    ax.set_title(title, fontsize=16, fontweight='bold')
+    
+    # Configure grid
+    if show_grid:
+        # Add grid lines
+        ax.set_xticks(np.arange(-0.5, maze.shape[1], 1), minor=True)
+        ax.set_yticks(np.arange(-0.5, maze.shape[0], 1), minor=True)
+        ax.grid(which='minor', color='gray', linestyle='-', linewidth=0.5, alpha=0.15)
+
+    # Remove all axes, ticks, and labels for clean look
+    ax.set_xticks([])
+    ax.set_yticks([])
+    # ax.axis('off')
+    
+    # Make sure the aspect ratio is equal (square cells)
+    ax.set_aspect('equal')
+   
+    plt.tight_layout()
+    
+    # Save if path provided
+    if save_path:
+        plt.savefig(save_path, dpi=300, bbox_inches='tight', 
+                   facecolor='white', edgecolor='none')
+        print(f"Maze plot saved to: {save_path}")
+    
+    return fig
+
+def create_simple_maze_plot(maze, save_path=None, title=None, figsize=(8, 8)):
+    """
+    Create a simple black and white plot of the maze without any extras.
+    
+    Args:
+        maze (np.array): 2D maze array where 1=wall/obstacle, 0=free cell
+        save_path (str, optional): Path to save the PNG file
+        title (str, optional): Title for the plot (if None, no title shown)
+        figsize (tuple): Figure size (width, height)
+    
+    Returns:
+        matplotlib.figure.Figure: The generated figure
+    """
+    import matplotlib.pyplot as plt
+    
+    save_path = "gym_env/plots/" + title.replace(" ", "_").lower() + ".png" if save_path is None else save_path
+    # Create figure and axis
+    fig, ax = plt.subplots(1, 1, figsize=figsize)
+    
+    # Create the maze visualization
+    # 0 (free cells) -> white (1.0)
+    # 1 (walls/obstacles) -> black (0.0)
+    maze_visual = 1 - maze  # Invert: 0->1 (white), 1->0 (black)
+    
+    # Display the maze - pure black and white
+    ax.imshow(maze_visual, cmap='gray', vmin=0, vmax=1, interpolation='nearest')
+    
+    # # Set title only if provided
+    # if title:
+    #     ax.set_title(title, fontsize=16, fontweight='bold')
+    
+    # Remove all axes, ticks, and labels for clean look
+    ax.set_xticks([])
+    ax.set_yticks([])
+    ax.axis('off')
+    
+    # Make sure the aspect ratio is equal (square cells)
+    ax.set_aspect('equal')
+    
+    # Remove any padding
+    plt.subplots_adjust(left=0, bottom=0, right=1, top=1, wspace=0, hspace=0)
+    
+    # Save if path provided
+    if save_path:
+        plt.savefig(save_path, dpi=300, bbox_inches='tight', 
+                   facecolor='white', edgecolor='none', pad_inches=0)
+        print(f"Simple maze plot saved to: {save_path}")
+    
+    return fig
 
 def print_maze(maze1, maze2):
     print("Low obstacle density (0.15):")
@@ -200,8 +182,24 @@ def print_maze(maze1, maze2):
     print("\nHigh obstacle density (0.85):")
     print(np.array2string(maze2, separator=' '))
 
+
+
 if __name__ == "__main__":
-    maze1 = create_maze(15, 15, 0.70)
-    maze2 = create_maze(15, 15, 0.85)
-    print_maze(maze1,maze2)
+
+    fig1 = create_simple_maze_plot(create_maze(10, 10, 0.30),
+                           title="10x10 - 15% Obstacles")
+    fig2 = create_simple_maze_plot(create_maze(15, 15, 0.30),
+                           title="15x15 - 15% Obstacles)")
+    fig3 = create_simple_maze_plot(create_maze(30, 30, 0.30),
+                           title="30x30 - 15% Obstacles)")
+    fig4 = create_simple_maze_plot(create_maze(10, 10, 0.85),
+                           title="10x10 - 85% Obstacles")
+    fig5 = create_simple_maze_plot(create_maze(15, 15, 0.85),
+                           title="15x15 - 85% Obstacles)")
+    fig6 = create_simple_maze_plot(create_maze(30, 30, 0.85),
+                           title="30x30 - 85% Obstacles)")
+    
+    # Show all plots
+    import matplotlib.pyplot as plt
+    plt.show()
     

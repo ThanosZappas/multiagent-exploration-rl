@@ -9,6 +9,7 @@ import os
 import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from common.maze_generator import create_maze
+import time
 
 # Register this module as a gym environment. Once registered, the id is usable in gym.make().
 register(
@@ -19,33 +20,33 @@ register(
 class MazeExplorationEnv(gym.Env):
     metadata = {"render_modes": ["human"]}
     
-    def __init__(self, rows = 10, columns = 10, max_steps=300, channels=4, difficulty_level=1):
+    def __init__(self, rows = 10, columns = 10, max_steps=250, channels=4, difficulty_level=1):
         super(MazeExplorationEnv, self).__init__()
 
         self.difficulty_config = {
             1: {
-                "maze_density": 0.15,
-                "target_mode": "near_unexplored",      # Close, rewarding targets for early learning
-                "agent_start_mode": "fixed"            # Always start at same position (e.g. [1,1])
+                "maze_density": 0.25,  
+                "target_mode": "near_unexplored",      
+                "agent_start_mode": "fixed"            
             },
             2: {
-                "maze_density": 0.35,
-                "target_mode": "near_unexplored",      # Guided targets still useful
-                "agent_start_mode": "fixed"
+                "maze_density": 0.85,
+                "target_mode": "near_unexplored",      
+                "agent_start_mode": "random"
             },
             3: {
-                "maze_density": 0.55,
-                "target_mode": "random",               # Introduce randomness and encourage generalization
+                "maze_density": 0.85,
+                "target_mode": "near_unexplored",              
                 "agent_start_mode": "random"
             },
             4: {
-                "maze_density": 0.70,
-                "target_mode": "random",               # Harder mazes, random targets
+                "maze_density": 0.85,
+                "target_mode": "near_unexplored",              
                 "agent_start_mode": "random"
             },
             5: {
                 "maze_density": 0.85,
-                "target_mode": "random",               # Dense maze, fully randomized behavior
+                "target_mode": "near_unexplored",          
                 "agent_start_mode": "random"
             },
         }
@@ -60,15 +61,20 @@ class MazeExplorationEnv(gym.Env):
         
         # Initialize positions and state
         self.set_agent_position()
-        self.coverage_grid = np.zeros_like(self.grid_map)  # Track explored areass
+        self.coverage_grid = np.zeros_like(self.grid_map)  # Track explored areas
         self.target_position = self._calculate_new_target()
-        self.fixed_target_position = (1, 2)  # Fixed target for level 1
         self.action_space = spaces.Discrete(4)  # Only cardinal directions: up, right, down, left
         self.channels = channels
         self.agent_lives = 2  # Number of lives for obstacle collisions
         self.agent_view = self._reset_agent_view()
+        self.current_lives = self.agent_lives
         self.steps = 0
         self.max_steps = max_steps
+
+        self.terminated = False
+        self.truncated = False
+        self.coverage = 0.0
+
 
         # Set observation space based on channels
         if self.channels == 1:
@@ -108,7 +114,7 @@ class MazeExplorationEnv(gym.Env):
         # Set agent starting position based on difficulty config
         agent_start_mode = self.current_config.get("agent_start_mode", "random")
         if agent_start_mode == "fixed":
-            self.agent_position = (1, 2)  # Fixed starting position for easier levels
+            self.agent_position = (1, 1)  # Fixed starting position for easier levels
         else:
             self.agent_position = self._random_position()
 
@@ -122,12 +128,16 @@ class MazeExplorationEnv(gym.Env):
         # Reset agent view and coverage
         self.agent_view = self._reset_agent_view()
         self.coverage_grid = np.zeros_like(self.grid_map)
+        # Not sure if it should exist
+        self._update_coverage() 
+
         
         # Set target position based on difficulty config
         self.target_position = self._calculate_new_target()
         
         self.steps = 0
         self.terminated = False
+        self.truncated = False
         self.current_lives = self.agent_lives
 
         observation = self._calculate_observation()
@@ -136,15 +146,18 @@ class MazeExplorationEnv(gym.Env):
     
     def step(self, action):
         self.steps += 1
-        reward = -0.1  # Small step penalty to encourage efficiency
-        terminated = False
-        truncated = False
+        reward = -0.05  # Small step penalty to encourage efficiency
+        self.terminated = False
+        self.truncated = False
 
         # Check max steps
         if self.steps >= self.max_steps:
-            truncated = True
-            reward = -1.0
-            return self._calculate_observation(), reward, terminated, truncated, {}
+            print(f"MAX STEPS REACHED: {self.steps}/{self.max_steps}")
+            self.truncated = True
+            reward = -5.0
+            # print("Episode truncated due to max steps reached.")
+            # print("Reward:", reward, "Coverage:", self.coverage, "Lives remaining:", self.current_lives)
+            return self._calculate_observation(), reward, self.terminated, self.truncated, {}
 
         # Convert action and calculate new position
         action_row, action_column = self._action_to_direction(action)
@@ -158,14 +171,17 @@ class MazeExplorationEnv(gym.Env):
             
             # Lose a life instead of immediate termination
             self.current_lives -= 1
-            reward = -1.0
-            
+
             if self.current_lives <= 0:
-                terminated = True
-                return self._calculate_observation(), reward, terminated, truncated, {}
+                self.terminated = True
+                reward = -10.0
+                # print("Agent has no lives left. Episode terminated.")
+                # print("Reward:", reward, "Coverage:", self.coverage, "Lives remaining:", self.current_lives)
+                return self._calculate_observation(), reward, self.terminated, self.truncated, {}
             else:
+                reward -= 5.0
                 # Don't move, but continue episode
-                return self._calculate_observation(), reward, terminated, truncated, {}
+                return self._calculate_observation(), reward, self.terminated, self.truncated, {}
 
         # Move agent if no collision
         self.agent_position = (new_row, new_column)
@@ -177,23 +193,28 @@ class MazeExplorationEnv(gym.Env):
         self._update_agent_view()
         
         # Calculate coverage
-        coverage = self.calculate_coverage()
+        self.coverage = self.calculate_coverage()
         
         # Check if the agent has fully explored the maze
-        if coverage >= 1.0:
-            terminated = True
-            reward = 100 - self.steps * 0.25  # Bonus for completing quickly
+        if self.coverage >= 1.0:
+            print("MAZE FULLY EXPLORED!")
+            self.terminated = True
+            reward = 100 - self.steps * 0.1  # Bonus for completing quickly
         else:
-            # Check if agent reached target
-            if np.array_equal(self.agent_position, self.target_position):
-                reward += 10.0  # Target reached bonus
-                self.target_position = self._calculate_new_target()
-            
             # Small reward for new exploration
-            reward += 0.25 * coverage
-            
-        return self._calculate_observation(), reward, terminated, truncated, {
-            "coverage": coverage,
+            reward += 0.75 * self.coverage
+            # Check if agent is adjacent to or on the target
+            agent_r, agent_c = self.agent_position
+            target_r, target_c = self.target_position
+            if abs(agent_r - target_r) <= 1 and abs(agent_c - target_c) <= 1:
+                reward += 7.5  # Target reached 
+                self.target_position = self._calculate_new_target()
+        
+        # self.render()
+        # # sleep for a short time to visualize the environment
+        # time.sleep(0.1)
+        return self._calculate_observation(), reward, self.terminated, self.truncated, {
+            "coverage": self.coverage,
             "lives_remaining": self.current_lives,
             "steps": self.steps
         }
@@ -268,10 +289,13 @@ class MazeExplorationEnv(gym.Env):
         """Calculate coverage as ratio of explored free cells to total free cells"""
         # Count total free cells (excluding walls and obstacles)
         total_free_cells = np.sum(self.grid_map == 0)
+        # print("Total free cells:", total_free_cells)
         
         # Count explored free cells
         explored_free_cells = np.sum((self.coverage_grid == 1) & (self.grid_map == 0))
-        
+        # print("Coverage grid:\n", self.coverage_grid == 1, self.coverage_grid)
+        # print("grid map:\n", self.grid_map == 0, self.grid_map)
+        # print("Explored free cells:", explored_free_cells)
         if total_free_cells == 0:
             return 1.0
         

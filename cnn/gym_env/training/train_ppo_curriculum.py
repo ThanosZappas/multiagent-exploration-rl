@@ -17,6 +17,15 @@ from neural_networks.advanced_cnn import CCNFeatureExtractor as CNN
 from environment.maze_exploration_env import MazeExplorationEnv
 
 
+# Setup directories
+time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+base_model_dir = f"models/PPO_Curriculum_{time}"
+base_log_dir = f"logs/ppo_curriculum_{time}"
+os.makedirs(base_model_dir, exist_ok=True)
+os.makedirs(base_log_dir, exist_ok=True)
+
+CURRICULUM_LEVELS = 1
+
 def make_env(difficulty_level=1):
     """Create environment with specified difficulty level"""
     def _init():
@@ -31,12 +40,6 @@ def train_curriculum():
     # Default grid map (can be None to use auto-generated 10x10)
     grid_map = None
     
-    # Setup directories
-    time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-    base_model_dir = f"models/PPO_Curriculum_{time}"
-    base_log_dir = f"logs/ppo_curriculum_{time}"
-    os.makedirs(base_model_dir, exist_ok=True)
-    os.makedirs(base_log_dir, exist_ok=True)
     
     # Device selection
     device = "mps" if th.backends.mps.is_available() else "cuda" if th.cuda.is_available() else "cpu"
@@ -44,11 +47,7 @@ def train_curriculum():
     
     # Curriculum configuration
     curriculum_config = {
-        1: {"timesteps": 50000, "description": "No obstacles, fixed target"},
-        2: {"timesteps": 75000, "description": "No obstacles, random target"},
-        3: {"timesteps": 100000, "description": "10% obstacles, random target, random start"},
-        4: {"timesteps": 125000, "description": "30% obstacles, near unexplored target"},
-        5: {"timesteps": 150000, "description": "40% obstacles, near unexplored target"}
+        1: {"timesteps": 10000000}
     }
     
     # Model setup
@@ -62,7 +61,7 @@ def train_curriculum():
     # Train through curriculum levels
     for level, config in curriculum_config.items():
         print(f"\n{'='*60}")
-        print(f"Training Level {level}: {config['description']}")
+        print(f"Training Level {level}")
         print(f"{'='*60}")
         
         # Create environments for this level
@@ -78,7 +77,7 @@ def train_curriculum():
             eval_env,
             best_model_save_path=f"{base_model_dir}/level_{level}",
             log_path=level_log_dir,
-            eval_freq=5000,
+            eval_freq=10000,
             n_eval_episodes=10,
             deterministic=True,
             render=False
@@ -93,24 +92,28 @@ def train_curriculum():
                 verbose=1,
                 ent_coef=0.005,
                 gamma=0.99,
-                n_steps=128,
-                tensorboard_log=level_log_dir,
+                n_steps=512,
+                clip_range=0.2,
+                learning_rate=0.0003,
+                batch_size=64,
+                n_epochs=10,
+                tensorboard_log=base_log_dir,  # Use base log directory
                 device=device
             )
         else:
             # Update environment for existing model
             model.set_env(train_env)
-            # Update tensorboard log directory
-            model.tensorboard_log = level_log_dir
-        
+           
         # Train for this level
+        tb_log_name = f"level_{level}"
         print(f"Training for {config['timesteps']} timesteps...")
+        print(f"TensorBoard logs will be saved to: {base_log_dir}/{tb_log_name}")
         model.learn(
             total_timesteps=config['timesteps'],
             progress_bar=True,
             reset_num_timesteps=False,
             callback=eval_callback,
-            tb_log_name=f"level_{level}"
+            tb_log_name=tb_log_name
         )
         
         # Save model after each level
@@ -125,6 +128,9 @@ def train_curriculum():
     print("Curriculum training completed!")
     print(f"Models saved in: {base_model_dir}")
     print(f"Logs saved in: {base_log_dir}")
+    print(f"\nTo view TensorBoard logs, run:")
+    print(f"tensorboard --logdir={base_log_dir}")
+    print(f"Then open: http://localhost:6006")
     print(f"{'='*60}")
     
     return model, base_model_dir
@@ -168,15 +174,16 @@ def evaluate_model(model_path, difficulty_level=5, episodes=10):
 
 if __name__ == "__main__":
     # Train using curriculum learning
-    # final_model, model_dir = train_curriculum()
-    model_dir = "models/PPO_Curriculum_20250802-180645"  
+    final_model, model_dir = train_curriculum()
+    model_dir = base_model_dir  
     
     # Evaluate the final model on the hardest level
-    print("\nEvaluating final model on Level 5...")
-    evaluate_model(f"{model_dir}/level_5_final.zip", difficulty_level=5)
+    # print("\nEvaluating final model on Level 5...")
+    # evaluate_model(f"{model_dir}/level_5_final.zip", difficulty_level=train_curiculum)
     
     # Optional: Evaluate on all levels to see generalization
     print("\nEvaluating generalization across all levels...")
-    for level in range(1, 6):
+    final_model_dir = f"{model_dir}/level_{CURRICULUM_LEVELS}_final.zip"  # Use the base model directory for evaluation
+    for level in range(1, CURRICULUM_LEVELS+1):
         print(f"\nLevel {level} evaluation:")
-        evaluate_model(f"{model_dir}/level_5_final.zip", difficulty_level=level, episodes=5)
+        evaluate_model(final_model_dir, difficulty_level=level, episodes=5)
