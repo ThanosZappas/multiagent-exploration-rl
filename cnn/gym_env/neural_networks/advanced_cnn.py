@@ -10,26 +10,29 @@ class CCNFeatureExtractor(BaseFeaturesExtractor):
         # Match the CNN structure from the table
         self.cnn = nn.Sequential(
             # First conv layer: Input -> 17,13,16
-            nn.Conv2d(n_input_channels, 16, kernel_size=3, stride=1),
+            nn.Conv2d(n_input_channels, 16, kernel_size=3, stride=1, padding=1),
             nn.ReLU(),
             
             # Second conv layer: 17,13,16 -> 15,11,32
-            nn.Conv2d(16, 32, kernel_size=3, stride=1),
+            nn.Conv2d(16, 32, kernel_size=3, stride=1, padding=1),
             nn.ReLU(),
             nn.Dropout(0.1),  # First dropout after second conv
             
             # Third conv layer: 15,11,32 -> 13,9,32
-            nn.Conv2d(32, 32, kernel_size=3, stride=1),
+            nn.Conv2d(32, 32, kernel_size=3, stride=1, padding=1),
             nn.ReLU(),
-            nn.Dropout(0.1)  # Second dropout after third conv
+            nn.Dropout(0.1)
         )
 
-        # Dynamically compute flattened output size
-        with torch.no_grad():
-            sample = torch.as_tensor(observation_space.sample()[None]).float()
-            n_flatten = torch.flatten(self.cnn(sample), 1).shape[1]
+        # Use Global Average Pooling
+        # It will output a tensor of shape (batch_size, 32)
+        self.global_avg_pool = nn.AdaptiveAvgPool2d((1, 1))
 
-        # Three fully connected layers as per the paper (64-256 neurons)
+        # The input to the first fully connected layer is now the number of channels
+        # from the last conv layer (which is 32).
+        n_flatten = 32
+
+        # Fully connected layers
         self.fc = nn.Sequential(
             nn.Linear(n_flatten, 64),
             nn.ReLU(),
@@ -42,6 +45,11 @@ class CCNFeatureExtractor(BaseFeaturesExtractor):
         )
 
     def forward(self, observations: torch.Tensor) -> torch.Tensor:
-        x = self.cnn(observations)
-        x = torch.flatten(x, 1)
-        return self.fc(x)
+        # Pass through CNN
+        cnn_features = self.cnn(observations)
+        # Apply Global Average Pooling
+        pooled_features = self.global_avg_pool(cnn_features)
+        # Flatten the pooled features
+        flattened_features = torch.flatten(pooled_features, 1)
+        # Pass through fully connected layers
+        return self.fc(flattened_features)

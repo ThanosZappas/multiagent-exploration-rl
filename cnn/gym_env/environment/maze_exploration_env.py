@@ -20,34 +20,29 @@ register(
 class MazeExplorationEnv(gym.Env):
     metadata = {"render_modes": ["human"]}
     
-    def __init__(self, rows = 10, columns = 10, max_steps=250, channels=4, difficulty_level=1):
+    def __init__(self, rows = 10, columns = 10, maze_density=0.85, max_steps=250, channels=4, difficulty_level=1):
         super(MazeExplorationEnv, self).__init__()
 
         self.difficulty_config = {
-            1: {
-                "maze_density": 0.25,  
+            1: { 
                 "target_mode": "near_unexplored",      
                 "agent_start_mode": "fixed"            
             },
             2: {
-                "maze_density": 0.85,
                 "target_mode": "near_unexplored",      
-                "agent_start_mode": "random"
+                "agent_start_mode": "fixed'"
             },
             3: {
-                "maze_density": 0.85,
                 "target_mode": "near_unexplored",              
-                "agent_start_mode": "random"
+                "agent_start_mode": "fixed'"
             },
             4: {
-                "maze_density": 0.85,
                 "target_mode": "near_unexplored",              
-                "agent_start_mode": "random"
+                "agent_start_mode": "fixed'"
             },
             5: {
-                "maze_density": 0.85,
                 "target_mode": "near_unexplored",          
-                "agent_start_mode": "random"
+                "agent_start_mode": "fixed'"
             },
         }
 
@@ -55,25 +50,30 @@ class MazeExplorationEnv(gym.Env):
         self.difficulty_level = difficulty_level
         self.current_config = self.difficulty_config[difficulty_level]
         
-        self.grid_map = create_maze(rows, columns, self.current_config["maze_density"])
-    
+        self.grid_map = create_maze(rows, columns, maze_density)
+        self.maze_density = maze_density
         self.num_rows, self.num_cols = rows, columns
-        
+        self.max_steps = max_steps
+        self.channels = channels
+
+      
         # Initialize positions and state
         self.set_agent_position()
         self.coverage_grid = np.zeros_like(self.grid_map)  # Track explored areas
         self.target_position = self._calculate_new_target()
         self.action_space = spaces.Discrete(4)  # Only cardinal directions: up, right, down, left
-        self.channels = channels
         self.agent_lives = 2  # Number of lives for obstacle collisions
         self.agent_view = self._reset_agent_view()
         self.current_lives = self.agent_lives
         self.steps = 0
-        self.max_steps = max_steps
 
-        self.terminated = False
-        self.truncated = False
-        self.coverage = 0.0
+        self.total_free_cells = np.sum(self.grid_map == 0)
+        self.explored_free_cells = np.sum((self.coverage_grid == 1) & (self.grid_map == 0))
+        self.coverage = self.calculate_coverage()
+        
+        self.coverage_80_percent_reached = False
+        self.coverage_90_percent_reached = False
+
 
 
         # Set observation space based on channels
@@ -112,7 +112,7 @@ class MazeExplorationEnv(gym.Env):
     
     def set_agent_position(self):
         # Set agent starting position based on difficulty config
-        agent_start_mode = self.current_config.get("agent_start_mode", "random")
+        agent_start_mode = self.current_config.get("agent_start_mode", "fixed")
         if agent_start_mode == "fixed":
             self.agent_position = (1, 1)  # Fixed starting position for easier levels
         else:
@@ -122,23 +122,25 @@ class MazeExplorationEnv(gym.Env):
         super().reset(seed=seed)
         
         # Generate new obstacle layout based on difficulty level
-        self.grid_map = create_maze(self.num_rows, self.num_cols, self.current_config["maze_density"])        
+        self.grid_map = create_maze(self.num_rows, self.num_cols, self.maze_density)        
         self.set_agent_position()
 
         # Reset agent view and coverage
         self.agent_view = self._reset_agent_view()
         self.coverage_grid = np.zeros_like(self.grid_map)
         # Not sure if it should exist
-        self._update_coverage() 
-
+        self.coverage = self.calculate_coverage()
+        self.total_free_cells = np.sum(self.grid_map == 0)
+        self.explored_free_cells = np.sum((self.coverage_grid == 1) & (self.grid_map == 0))
+        
         
         # Set target position based on difficulty config
         self.target_position = self._calculate_new_target()
         
         self.steps = 0
-        self.terminated = False
-        self.truncated = False
         self.current_lives = self.agent_lives
+        self.coverage_80_percent_reached = False
+        self.coverage_90_percent_reached = False
 
         observation = self._calculate_observation()
         info = {}
@@ -146,18 +148,21 @@ class MazeExplorationEnv(gym.Env):
     
     def step(self, action):
         self.steps += 1
-        reward = -0.05  # Small step penalty to encourage efficiency
-        self.terminated = False
-        self.truncated = False
+        reward = -0.1  # Small step penalty to encourage efficiency
+        terminated = False
+        truncated = False
 
         # Check max steps
         if self.steps >= self.max_steps:
             print(f"MAX STEPS REACHED: {self.steps}/{self.max_steps}")
-            self.truncated = True
+            truncated = True
             reward = -5.0
             # print("Episode truncated due to max steps reached.")
             # print("Reward:", reward, "Coverage:", self.coverage, "Lives remaining:", self.current_lives)
-            return self._calculate_observation(), reward, self.terminated, self.truncated, {}
+            return self._calculate_observation(), reward, terminated, truncated, {
+                    "coverage": self.coverage,
+                    "lives_remaining": self.current_lives,
+                    "steps": self.steps}
 
         # Convert action and calculate new position
         action_row, action_column = self._action_to_direction(action)
@@ -173,36 +178,46 @@ class MazeExplorationEnv(gym.Env):
             self.current_lives -= 1
 
             if self.current_lives <= 0:
-                self.terminated = True
+                terminated = True
                 reward = -10.0
                 # print("Agent has no lives left. Episode terminated.")
                 # print("Reward:", reward, "Coverage:", self.coverage, "Lives remaining:", self.current_lives)
-                return self._calculate_observation(), reward, self.terminated, self.truncated, {}
+                return self._calculate_observation(), reward, terminated, truncated,  {
+                    "coverage": self.coverage,
+                    "lives_remaining": self.current_lives,
+                    "steps": self.steps}
             else:
                 reward -= 5.0
                 # Don't move, but continue episode
-                return self._calculate_observation(), reward, self.terminated, self.truncated, {}
+                return self._calculate_observation(), reward, terminated, truncated, {}
 
         # Move agent if no collision
         self.agent_position = (new_row, new_column)
-        
+        previous_explored_cells = self.explored_free_cells
         # Update coverage grid (mark surrounding cells as explored)
-        self._update_coverage()
+        self._update_coverage_grid()
         
         # Update agent view 
         self._update_agent_view()
         
         # Calculate coverage
         self.coverage = self.calculate_coverage()
-        
+        if self.coverage >= 0.8 and self.coverage_80_percent_reached == False:
+            self.coverage_80_percent_reached = True
+            reward += 7.5
+        if self.coverage >= 0.9 and self.coverage_90_percent_reached == False:
+            self.coverage_90_percent_reached = True
+            reward += 10
         # Check if the agent has fully explored the maze
         if self.coverage >= 1.0:
             print("MAZE FULLY EXPLORED!")
-            self.terminated = True
-            reward = 100 - self.steps * 0.1  # Bonus for completing quickly
+            reward += 100 - (self.steps * 0.1)  # Bonus for completing quickly
+            terminated = True
         else:
             # Small reward for new exploration
-            reward += 0.75 * self.coverage
+            # reward += 0.75 * self.coverage
+            reward += 0.5 * (self.explored_free_cells - previous_explored_cells)
+
             # Check if agent is adjacent to or on the target
             agent_r, agent_c = self.agent_position
             target_r, target_c = self.target_position
@@ -210,10 +225,7 @@ class MazeExplorationEnv(gym.Env):
                 reward += 7.5  # Target reached 
                 self.target_position = self._calculate_new_target()
         
-        # self.render()
-        # # sleep for a short time to visualize the environment
-        # time.sleep(0.1)
-        return self._calculate_observation(), reward, self.terminated, self.truncated, {
+        return self._calculate_observation(), reward, terminated, truncated, {
             "coverage": self.coverage,
             "lives_remaining": self.current_lives,
             "steps": self.steps
@@ -245,7 +257,7 @@ class MazeExplorationEnv(gym.Env):
 
     def _calculate_new_target(self):
         """Calculate new target position based on difficulty configuration"""
-        target_mode = self.current_config.get("target_mode", "random")
+        target_mode = self.current_config.get("target_mode", "near_unexplored")
         
         if target_mode == "random":
             return self._random_position()
@@ -287,23 +299,15 @@ class MazeExplorationEnv(gym.Env):
 
     def calculate_coverage(self):
         """Calculate coverage as ratio of explored free cells to total free cells"""
-        # Count total free cells (excluding walls and obstacles)
-        total_free_cells = np.sum(self.grid_map == 0)
-        # print("Total free cells:", total_free_cells)
-        
-        # Count explored free cells
-        explored_free_cells = np.sum((self.coverage_grid == 1) & (self.grid_map == 0))
-        # print("Coverage grid:\n", self.coverage_grid == 1, self.coverage_grid)
-        # print("grid map:\n", self.grid_map == 0, self.grid_map)
-        # print("Explored free cells:", explored_free_cells)
-        if total_free_cells == 0:
+        self.explored_free_cells = np.sum((self.coverage_grid == 1) & (self.grid_map == 0))
+        if self.total_free_cells == 0:
             return 1.0
         
-        coverage = explored_free_cells / total_free_cells
+        coverage = self.explored_free_cells / self.total_free_cells
         return min(coverage, 1.0)  # Ensure coverage doesn't exceed 1.0
 
 
-    def _update_coverage(self):
+    def _update_coverage_grid(self):
         """Update coverage grid based on agent's current position"""
         agent_row, agent_col = self.agent_position
         

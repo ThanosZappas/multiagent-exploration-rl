@@ -12,6 +12,7 @@ from stable_baselines3 import PPO
 from stable_baselines3.common.vec_env import DummyVecEnv
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.callbacks import EvalCallback
+from stable_baselines3.common.save_util import load_from_zip_file
 from neural_networks.simple_cnn import Simple1ChannelCNN
 from neural_networks.advanced_cnn import CCNFeatureExtractor as CNN
 from environment.maze_exploration_env import MazeExplorationEnv
@@ -23,32 +24,62 @@ base_model_dir = f"models/PPO_Curriculum_{time}"
 base_log_dir = f"logs/ppo_curriculum_{time}"
 os.makedirs(base_model_dir, exist_ok=True)
 os.makedirs(base_log_dir, exist_ok=True)
-
+CHANNELS = 4  # Change to 1 for single channel CNN
 CURRICULUM_LEVELS = 1
+
+# Curriculum configuration
+CURRICULUM_CONFIGURATION = {
+    1: {"timesteps": 5000000, "rows": 6, "columns": 6, "maze_density" : 0.85, "max_steps": 30}
+    ,
+    2: {"timesteps": 5000000, "rows": 8, "columns": 8, "maze_density" : 0.85, "max_steps": 100}
+    ,
+    3: {"timesteps": 5000000, "rows": 10, "columns": 10, "maze_density" : 0.85, "max_steps": 225}
+    # ,
+    # 4: {"timesteps": 10000000, "rows": 14, "columns": 14, "maze_density" : 0.85, "max_steps": 450}
+}
 
 def make_env(difficulty_level=1):
     """Create environment with specified difficulty level"""
     def _init():
-        env = gym.make("maze-exploration-v1", 
+        env = gym.make("maze-exploration-v1",rows=CURRICULUM_CONFIGURATION[difficulty_level].get("rows"), columns=CURRICULUM_CONFIGURATION[difficulty_level].get("columns"),maze_density=CURRICULUM_CONFIGURATION[difficulty_level].get("maze_density"), max_steps=CURRICULUM_CONFIGURATION[difficulty_level].get("max_steps"), channels=CHANNELS, 
                       difficulty_level=difficulty_level)
         return Monitor(env)
     return _init
 
+def transfer_weights(new_model, old_model_path, device):
+    """
+    Transfers weights from a saved model to a new model.
+    It handles cases where the feature extractor's fully connected layers may differ in size.
+    """
+    print(f"Loading weights from: {old_model_path}")
+    
+    # Load parameters from the old model's zip file
+    _, params, _ = load_from_zip_file(old_model_path, device=device)
+    
+    # Extract the policy's state dictionary
+    old_state_dict = params['policy']
+    new_state_dict = new_model.policy.state_dict()
+
+    # Copy weights for layers that exist and have the same shape in both models
+    for name, param in old_state_dict.items():
+        if name in new_state_dict and new_state_dict[name].shape == param.shape:
+            new_state_dict[name].copy_(param)
+        else:
+            print(f"Skipping layer {name}: shape mismatch or not found in new model.")
+
+    # Load the modified state dict into the new model
+    new_model.policy.load_state_dict(new_state_dict)
+    print("Weight transfer complete.")
+
+
 def train_curriculum():
     """Train agent using curriculum learning across difficulty levels"""
-    
-    # Default grid map (can be None to use auto-generated 10x10)
-    grid_map = None
     
     
     # Device selection
     device = "mps" if th.backends.mps.is_available() else "cuda" if th.cuda.is_available() else "cpu"
     print(f"Using device: {device}")
     
-    # Curriculum configuration
-    curriculum_config = {
-        1: {"timesteps": 10000000}
-    }
     
     # Model setup
     policy_kwargs = dict(
@@ -57,9 +88,10 @@ def train_curriculum():
     )
     
     model = None
+    previous_model_path = None
     
     # Train through curriculum levels
-    for level, config in curriculum_config.items():
+    for level, configuration in CURRICULUM_CONFIGURATION.items():
         print(f"\n{'='*60}")
         print(f"Training Level {level}")
         print(f"{'='*60}")
@@ -67,7 +99,6 @@ def train_curriculum():
         # Create environments for this level
         train_env = DummyVecEnv([make_env(difficulty_level=level)])
         eval_env = DummyVecEnv([make_env(difficulty_level=level)])
-        
         # Setup logging for this level
         level_log_dir = f"{base_log_dir}/level_{level}"
         os.makedirs(level_log_dir, exist_ok=True)
@@ -78,47 +109,67 @@ def train_curriculum():
             best_model_save_path=f"{base_model_dir}/level_{level}",
             log_path=level_log_dir,
             eval_freq=10000,
-            n_eval_episodes=10,
+            n_eval_episodes=5,
             deterministic=True,
             render=False
         )
         
-        if model is None:
-            # Create new model for first level
+        # For each level, we create a new model.
+        # If a previous model exists, we transfer its learned weights.
+        if CHANNELS == 1:
             model = PPO(
                 "CnnPolicy",
                 train_env,
                 policy_kwargs=policy_kwargs,
                 verbose=1,
-                ent_coef=0.005,
+                ent_coef=0.001,
                 gamma=0.99,
                 n_steps=512,
                 clip_range=0.2,
                 learning_rate=0.0003,
-                batch_size=64,
-                n_epochs=10,
-                tensorboard_log=base_log_dir,  # Use base log directory
+                batch_size=256,
+                n_epochs=4,
+                tensorboard_log=base_log_dir,
                 device=device
             )
-        else:
-            # Update environment for existing model
-            model.set_env(train_env)
+        elif CHANNELS == 4:
+            model = PPO(
+                    "CnnPolicy",
+                    train_env,
+                    policy_kwargs=policy_kwargs,
+                    verbose=1,
+                    ent_coef=0.001,
+                    gamma=0.99,
+                    n_steps=512,
+                    clip_range=0.2,
+                    learning_rate=0.0002,
+                    batch_size=512,
+                    n_epochs=8,
+                    tensorboard_log=base_log_dir,
+                    device=device
+            )
+
+        # If we have a model from a previous level, transfer its weights
+        if previous_model_path:
+            transfer_weights(model, previous_model_path, device)
            
         # Train for this level
         tb_log_name = f"level_{level}"
-        print(f"Training for {config['timesteps']} timesteps...")
+        print(f"Training for {configuration['timesteps']} timesteps...")
         print(f"TensorBoard logs will be saved to: {base_log_dir}/{tb_log_name}")
         model.learn(
-            total_timesteps=config['timesteps'],
+            total_timesteps=configuration['timesteps'],
             progress_bar=True,
             reset_num_timesteps=False,
             callback=eval_callback,
             tb_log_name=tb_log_name
         )
         
-        # Save model after each level
-        model.save(f"{base_model_dir}/level_{level}_final")
-        print(f"Level {level} completed and saved!")
+        # Save model after each level and set path for the next iteration
+        current_model_path = f"{base_model_dir}/level_{level}_final.zip"
+        model.save(current_model_path)
+        previous_model_path = current_model_path
+        print(f"Level {level} completed and saved to {current_model_path}!")
         
         # Clean up environments
         train_env.close()
@@ -135,12 +186,12 @@ def train_curriculum():
     
     return model, base_model_dir
 
-def evaluate_model(model_path, difficulty_level=5, episodes=10):
+def evaluate_model(model_path, difficulty_level=5, configuration=None, episodes=10):
     """Evaluate a trained model on specified difficulty level"""
     
     # Create environment
-    env = gym.make("maze-exploration-v1", 
-                   difficulty_level=difficulty_level)
+    env = gym.make("maze-exploration-v1", rows=configuration.get("rows"), columns=configuration.get("columns"),maze_density=configuration.get("maze_density"),max_steps=configuration.get("max_steps"),channels=CHANNELS, 
+                      difficulty_level=difficulty_level)
     
     # Load model
     model = PPO.load(model_path, env=env)
@@ -158,6 +209,7 @@ def evaluate_model(model_path, difficulty_level=5, episodes=10):
             obs, reward, terminated, truncated, info = env.step(action)
             done = terminated or truncated
             total_reward += reward
+            env.render()  # Render the environment
             
             if done:
                 coverage = info.get("coverage", 0)
@@ -183,7 +235,7 @@ if __name__ == "__main__":
     
     # Optional: Evaluate on all levels to see generalization
     print("\nEvaluating generalization across all levels...")
-    final_model_dir = f"{model_dir}/level_{CURRICULUM_LEVELS}_final.zip"  # Use the base model directory for evaluation
-    for level in range(1, CURRICULUM_LEVELS+1):
+    for level, configuration in CURRICULUM_CONFIGURATION.items():
         print(f"\nLevel {level} evaluation:")
-        evaluate_model(final_model_dir, difficulty_level=level, episodes=5)
+        model_to_eval_path = f"{model_dir}/level_{level}_final.zip"
+        evaluate_model(model_to_eval_path, difficulty_level=level, configuration=configuration, episodes=5)
