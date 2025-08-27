@@ -8,7 +8,7 @@ import gymnasium as gym
 import numpy as np
 import datetime
 import torch as th
-from stable_baselines3 import PPO, A2C, DQN
+from stable_baselines3 import A2C
 from stable_baselines3.common.vec_env import DummyVecEnv
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.callbacks import EvalCallback
@@ -20,20 +20,20 @@ from environment.maze_exploration_env import MazeExplorationEnv
 
 # Setup directories
 time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-base_model_dir = f"models/PPO_Curriculum_{time}"
-base_log_dir = f"logs/ppo_curriculum_{time}"
+base_model_dir = f"models/A2C_Curriculum_{time}"
+base_log_dir = f"logs/a2c_curriculum_{time}"
 os.makedirs(base_model_dir, exist_ok=True)
 os.makedirs(base_log_dir, exist_ok=True)
 CHANNELS = 4  # Change to 1 for single channel CNN
-CURRICULUM_LEVELS = 1
+CURRICULUM_LEVELS = 3
 
 # Curriculum configuration
 CURRICULUM_CONFIGURATION = {
-    1: {"timesteps": 5000000, "rows": 6, "columns": 6, "maze_density" : 0.85, "max_steps": 30}
-    ,
-    2: {"timesteps": 5000000, "rows": 8, "columns": 8, "maze_density" : 0.85, "max_steps": 100}
-    ,
-    3: {"timesteps": 5000000, "rows": 10, "columns": 10, "maze_density" : 0.85, "max_steps": 250}
+    # 1: {"timesteps": 5000000, "rows": 6, "columns": 6, "maze_density" : 0.85, "max_steps": 30}
+    # ,
+    # 2: {"timesteps": 5000000, "rows": 8, "columns": 8, "maze_density" : 0.85, "max_steps": 100}
+    # ,
+    1: {"timesteps": 10000000, "rows": 10, "columns": 10, "maze_density" : 0.85, "max_steps": 225}
     # ,
     # 4: {"timesteps": 10000000, "rows": 14, "columns": 14, "maze_density" : 0.85, "max_steps": 450}
 }
@@ -117,34 +117,28 @@ def train_curriculum():
         # For each level, we create a new model.
         # If a previous model exists, we transfer its learned weights.
         if CHANNELS == 1:
-            model = PPO(
+            model = A2C(
                 "CnnPolicy",
                 train_env,
                 policy_kwargs=policy_kwargs,
                 verbose=1,
                 ent_coef=0.001,
                 gamma=0.99,
-                n_steps=512,
-                clip_range=0.2,
-                learning_rate=0.0003,
-                batch_size=256,
-                n_epochs=4,
+                n_steps=5,
+                learning_rate=0.0007,
                 tensorboard_log=base_log_dir,
                 device=device
             )
         elif CHANNELS == 4:
-            model = PPO(
+            model = A2C(
                     "CnnPolicy",
                     train_env,
                     policy_kwargs=policy_kwargs,
                     verbose=1,
-                    ent_coef=0.0015,
+                    ent_coef=0.001,
                     gamma=0.99,
-                    n_steps=512,
-                    clip_range=0.2,
-                    learning_rate=0.0002,
-                    batch_size=512,
-                    n_epochs=8,
+                    n_steps=16,           # Increased: More data per update for stability
+                    learning_rate=0.0005, # Decreased: Smaller steps for safer learning
                     tensorboard_log=base_log_dir,
                     device=device
             )
@@ -194,7 +188,7 @@ def evaluate_model(model_path, difficulty_level=5, configuration=None, episodes=
                       difficulty_level=difficulty_level)
     
     # Load model
-    model = PPO.load(model_path, env=env)
+    model = A2C.load(model_path, env=env)
     
     total_rewards = []
     coverages = []
