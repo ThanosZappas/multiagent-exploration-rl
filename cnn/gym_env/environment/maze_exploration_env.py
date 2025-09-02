@@ -143,8 +143,7 @@ class MazeExplorationEnv(gym.Env):
         self.coverage_90_percent_reached = False
 
         observation = self._calculate_observation()
-        info = {}
-        return observation, info
+        return observation, self._get_info()
     
     def step(self, action):
         self.steps += 1
@@ -156,13 +155,10 @@ class MazeExplorationEnv(gym.Env):
         if self.steps >= self.max_steps:
             print(f"MAX STEPS REACHED: {self.steps}/{self.max_steps}")
             truncated = True
-            reward = -5.0
+            reward = -1.0
             # print("Episode truncated due to max steps reached.")
             # print("Reward:", reward, "Coverage:", self.coverage, "Lives remaining:", self.current_lives)
-            return self._calculate_observation(), reward, terminated, truncated, {
-                    "coverage": self.coverage,
-                    "lives_remaining": self.current_lives,
-                    "steps": self.steps}
+            return self._calculate_observation(), reward, terminated, truncated, self._get_info()
 
         # Convert action and calculate new position
         action_row, action_column = self._action_to_direction(action)
@@ -179,17 +175,14 @@ class MazeExplorationEnv(gym.Env):
 
             if self.current_lives <= 0:
                 terminated = True
-                reward = -10.0
+                reward = -3.0
                 # print("Agent has no lives left. Episode terminated.")
                 # print("Reward:", reward, "Coverage:", self.coverage, "Lives remaining:", self.current_lives)
-                return self._calculate_observation(), reward, terminated, truncated,  {
-                    "coverage": self.coverage,
-                    "lives_remaining": self.current_lives,
-                    "steps": self.steps}
+                return self._calculate_observation(), reward, terminated, truncated, self._get_info()
             else:
-                reward -= 5.0
+                reward -= 3.0
                 # Don't move, but continue episode
-                return self._calculate_observation(), reward, terminated, truncated, {}
+                return self._calculate_observation(), reward, terminated, truncated, self._get_info()
 
         # Move agent if no collision
         self.agent_position = (new_row, new_column)
@@ -204,32 +197,28 @@ class MazeExplorationEnv(gym.Env):
         self.coverage = self.calculate_coverage()
         if self.coverage >= 0.8 and self.coverage_80_percent_reached == False:
             self.coverage_80_percent_reached = True
-            reward += 7.5
+            reward += 4
         if self.coverage >= 0.9 and self.coverage_90_percent_reached == False:
             self.coverage_90_percent_reached = True
-            reward += 10
+            reward += 4
         # Check if the agent has fully explored the maze
         if self.coverage >= 1.0:
             print("MAZE FULLY EXPLORED!")
-            reward += 100 - (self.steps * 0.1)  # Bonus for completing quickly
+            reward += 120 - (self.steps/self.max_steps * 20)  # Bonus for full exploration, scaled by efficiency
             terminated = True
         else:
             # Small reward for new exploration
             # reward += 0.75 * self.coverage
-            reward += 0.5 * (self.explored_free_cells - previous_explored_cells)
+            reward += 0.75 * (self.explored_free_cells - previous_explored_cells)
 
             # Check if agent is adjacent to or on the target
             agent_r, agent_c = self.agent_position
             target_r, target_c = self.target_position
             if abs(agent_r - target_r) <= 1 and abs(agent_c - target_c) <= 1:
-                reward += 7.5  # Target reached 
+                reward += 5  # Target reached 
                 self.target_position = self._calculate_new_target()
         
-        return self._calculate_observation(), reward, terminated, truncated, {
-            "coverage": self.coverage,
-            "lives_remaining": self.current_lives,
-            "steps": self.steps
-        }
+        return self._calculate_observation(), reward, terminated, truncated, self._get_info()
 
 
     # Gym required function to render environment
@@ -343,7 +332,10 @@ class MazeExplorationEnv(gym.Env):
 
 
     def _get_info(self): 
-        info = {"agent_position": self.agent_position, "target_position": self.target_position}
+        info = {
+            "coverage": self.coverage,
+            "lives_remaining": self.current_lives,
+            "steps": self.steps}
         return info
     
 

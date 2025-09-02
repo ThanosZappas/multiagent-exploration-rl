@@ -1,5 +1,7 @@
 import os
 import sys
+from collections import deque
+from typing import Callable
 
 # Add the parent directory to the Python path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -11,7 +13,8 @@ import torch as th
 from stable_baselines3 import DQN
 from stable_baselines3.common.vec_env import DummyVecEnv
 from stable_baselines3.common.monitor import Monitor
-from stable_baselines3.common.callbacks import EvalCallback
+from stable_baselines3.common.callbacks import EvalCallback, CallbackList, BaseCallback
+
 from stable_baselines3.common.save_util import load_from_zip_file
 from neural_networks.simple_cnn import Simple1ChannelCNN
 from neural_networks.advanced_cnn import CCNFeatureExtractor as CNN
@@ -19,13 +22,13 @@ from environment.maze_exploration_env import MazeExplorationEnv
 
 
 # Setup directories
-time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-base_model_dir = f"models/DQN_Curriculum_{time}"
-base_log_dir = f"logs/dqn_curriculum_{time}"
+time = datetime.datetime.now().strftime("%d-%m-%Y_%H-%M")
+base_model_dir = f"models/DQN_{time}"
+base_log_dir = f"logs/DQN_{time}"
 os.makedirs(base_model_dir, exist_ok=True)
 os.makedirs(base_log_dir, exist_ok=True)
-CHANNELS = 4  # Change to 1 for single channel CNN
-CURRICULUM_LEVELS = 3
+CHANNELS = 1  # Change to 1 for single channel CNN
+# CURRICULUM_LEVELS = 3
 
 # Curriculum configuration
 CURRICULUM_CONFIGURATION = {
@@ -33,7 +36,7 @@ CURRICULUM_CONFIGURATION = {
     # ,
     # 2: {"timesteps": 5000000, "rows": 8, "columns": 8, "maze_density" : 0.85, "max_steps": 100}
     # ,
-    1: {"timesteps": 10000000, "rows": 10, "columns": 10, "maze_density" : 0.85, "max_steps": 225}
+    1: {"timesteps": 20000000, "rows": 10, "columns": 10, "maze_density" : 0.85, "max_steps": 250}
     # ,
     # 4: {"timesteps": 10000000, "rows": 14, "columns": 14, "maze_density" : 0.85, "max_steps": 450}
 }
@@ -41,9 +44,10 @@ CURRICULUM_CONFIGURATION = {
 def make_env(difficulty_level=1):
     """Create environment with specified difficulty level"""
     def _init():
-        env = gym.make("maze-exploration-v1",rows=CURRICULUM_CONFIGURATION[difficulty_level].get("rows"), columns=CURRICULUM_CONFIGURATION[difficulty_level].get("columns"),maze_density=CURRICULUM_CONFIGURATION[difficulty_level].get("maze_density"), max_steps=CURRICULUM_CONFIGURATION[difficulty_level].get("max_steps"), channels=CHANNELS, 
+        env = gym.make("maze-exploration-v1", rows=CURRICULUM_CONFIGURATION[difficulty_level].get("rows"), columns=CURRICULUM_CONFIGURATION[difficulty_level].get("columns"),maze_density=CURRICULUM_CONFIGURATION[difficulty_level].get("maze_density"), max_steps=CURRICULUM_CONFIGURATION[difficulty_level].get("max_steps"), channels=CHANNELS, 
                       difficulty_level=difficulty_level)
-        return Monitor(env)
+        # Add 'coverage' to the info keywords to be logged by the Monitor
+        return Monitor(env, info_keywords=("coverage",))
     return _init
 
 def transfer_weights(new_model, old_model_path, device):
@@ -70,6 +74,100 @@ def transfer_weights(new_model, old_model_path, device):
     # Load the modified state dict into the new model
     new_model.policy.load_state_dict(new_state_dict)
     print("Weight transfer complete.")
+
+def linear_schedule(initial_value: float, end_value: float) -> Callable[[float], float]:
+    """
+    Linear learning rate schedule.
+
+    :param initial_value: The initial learning rate.
+    :param end_value: The final learning rate.
+    :return: schedule that computes
+      current learning rate depending on remaining progress
+    """
+    def func(progress_remaining: float) -> float:
+        """
+        Progress will decrease from 1 (beginning) to 0.
+        """
+        return end_value + (initial_value - end_value) * progress_remaining
+
+    return func
+class MetricsEvalCallback(BaseCallback):
+    """
+    A custom callback that logs training and evaluation metrics by directly
+    accessing episode info.
+    It logs:
+    - rollout/success_rate (training)
+    - rollout/mean_ep_coverage (training)
+    - eval/success_rate (evaluation)
+    - eval/mean_coverage (evaluation)
+    """
+    def __init__(self, eval_env, eval_freq: int, n_eval_episodes: int, verbose: int = 0):
+        super(MetricsEvalCallback, self).__init__(verbose)
+        self.eval_env = eval_env
+        self.eval_freq = eval_freq
+        self.n_eval_episodes = n_eval_episodes
+        # Use a deque to store recent training coverages for a rolling average
+        self.recent_train_coverages = deque(maxlen=100)
+
+    def _on_step(self) -> bool:
+        # --- Log training metrics ---
+        # Check if any episodes ended in the training environment
+        for i, done in enumerate(self.locals.get("dones", [])):
+            if done:
+                # The Monitor wrapper puts final episode info in `info['episode']`
+                info = self.locals["infos"][i]
+                if "episode" in info and "coverage" in info["episode"]:
+                    coverage = info["episode"]["coverage"]
+                    self.recent_train_coverages.append(coverage)
+
+        # Periodically log the rolling average of training metrics
+        if self.n_calls % 1024 == 0 and self.recent_train_coverages:
+            coverages = list(self.recent_train_coverages)
+            success_rate = np.mean([c >= 1.0 for c in coverages])
+            mean_coverage = np.mean(coverages)
+            self.logger.record("rollout/success_rate", success_rate)
+            self.logger.record("rollout/mean_ep_coverage", mean_coverage)
+
+        # --- Log evaluation metrics ---
+        # if self.n_calls > 0 and self.n_calls % self.eval_freq == 0:
+        #     self._run_evaluation()
+
+        return True
+
+    def _run_evaluation(self) -> None:
+        """
+        Manually run evaluation and log metrics.
+        """
+        all_coverages = []
+        all_rewards = []
+
+        for _ in range(self.n_eval_episodes):
+            obs = self.eval_env.reset()
+            done = False
+            episode_reward = 0
+            while not done:
+                action, _ = self.model.predict(obs, deterministic=True)
+                obs, reward, terminated, truncated, infos = self.eval_env.step(action)
+                done = terminated[0] or truncated[0]
+                episode_reward += reward[0]
+                
+                if done:
+                    # The info dict from the VecEnv contains the final info from the Monitor
+                    final_info = infos[0]
+                    if "episode" in final_info:
+                        all_coverages.append(final_info["episode"]["coverage"])
+            all_rewards.append(episode_reward)
+
+        if all_coverages:
+            mean_coverage = np.mean(all_coverages)
+            success_rate = np.mean([c >= 1.0 for c in all_coverages])
+            self.logger.record("eval/mean_coverage", mean_coverage)
+            self.logger.record("eval/success_rate", success_rate)
+        
+        if all_rewards:
+            self.logger.record("eval/mean_reward", np.mean(all_rewards))
+        
+        self.logger.dump(self.num_timesteps)
 
 
 def train_curriculum():
@@ -102,14 +200,21 @@ def train_curriculum():
         # Setup logging for this level
         level_log_dir = f"{base_log_dir}/level_{level}"
         os.makedirs(level_log_dir, exist_ok=True)
-        
-        # Evaluation callback
-        eval_callback = EvalCallback(
+         # Combined callback for training and evaluation metrics
+       
+        metrics_callback = MetricsEvalCallback(
+            eval_env=eval_env,
+            eval_freq=20000,
+            n_eval_episodes=5,
+        )
+
+        # Use a separate EvalCallback just for saving the best model
+        eval_callback_saver = EvalCallback(
             eval_env,
             best_model_save_path=f"{base_model_dir}/level_{level}",
             log_path=level_log_dir,
-            eval_freq=10000,
-            n_eval_episodes=5,
+            eval_freq=20000,
+            n_eval_episodes=1,
             deterministic=True,
             render=False
         )
@@ -117,12 +222,13 @@ def train_curriculum():
         # For each level, we create a new model.
         # If a previous model exists, we transfer its learned weights.
         if CHANNELS == 1:
+            lr_schedule = linear_schedule(0.0001, 0.00005)
             model = DQN(
                 "CnnPolicy",
                 train_env,
                 policy_kwargs=policy_kwargs,
                 verbose=1,
-                learning_rate=0.0001,
+                learning_rate=lr_schedule,
                 buffer_size=100000,
                 learning_starts=5000,
                 batch_size=32,
@@ -136,12 +242,13 @@ def train_curriculum():
                 device=device
             )
         elif CHANNELS == 4:
+            lr_schedule = linear_schedule(0.0001, 0.00005)
             model = DQN(
                     "CnnPolicy",
                     train_env,
                     policy_kwargs=policy_kwargs,
                     verbose=1,
-                    learning_rate=0.0001,
+                    learning_rate=lr_schedule,
                     buffer_size=100000,
                     learning_starts=10000,
                     batch_size=64,
@@ -167,7 +274,8 @@ def train_curriculum():
             total_timesteps=configuration['timesteps'],
             progress_bar=True,
             reset_num_timesteps=False,
-            callback=eval_callback,
+            callback=CallbackList([metrics_callback, eval_callback_saver])
+,
             tb_log_name=tb_log_name
         )
         

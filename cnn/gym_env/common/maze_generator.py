@@ -1,15 +1,17 @@
 import numpy as np
 import random
 
+def create_maze(rows, cols, obs_prob=0.85):
+     # Calculate base dimensions for maze generation
+    base_rows = int((rows - 1) / 2)
+    base_cols = int((cols - 1) / 2)
 
-def create_maze(rows, cols, obs_prob=0.85): #TODO FIX EVEN MAZE - IF ROWS AND COLS ARE ODD
-    rows = int(rows / 2)
-    cols = int(cols / 2)
-
-    maze = np.ones((rows * 2, cols * 2))
-
+    # Create maze of exact size rows x cols
+    maze = np.ones((rows, cols))
+    maze[1, 1] = 0  # Starting position (1,1) should be free
+    
     x, y = (0, 0)
-
+    
     stack = [(x, y)]
     while len(stack) > 0:
         x, y = stack[-1]
@@ -19,9 +21,9 @@ def create_maze(rows, cols, obs_prob=0.85): #TODO FIX EVEN MAZE - IF ROWS AND CO
 
         for dx, dy in directions:
             nx, ny = x + dx, y + dy
-            if nx >= 0 and ny >= 0 and nx < rows and ny < cols and maze[2 * nx , 2 * ny ] == 1:
-                maze[2 * nx , 2 * ny ] = 0
-                maze[2 * x  + dx, 2 * y  + dy] = 0
+            if nx >= 0 and ny >= 0 and nx < base_rows and ny < base_cols and maze[2 * nx + 1, 2 * ny + 1] == 1:
+                maze[2 * nx + 1, 2 * ny + 1] = 0
+                maze[2 * x + 1 + dx, 2 * y + 1 + dy] = 0
                 stack.append((nx, ny))
                 break
         else:
@@ -63,8 +65,8 @@ def create_maze(rows, cols, obs_prob=0.85): #TODO FIX EVEN MAZE - IF ROWS AND CO
     maze[:, 0] = 1
     maze[:, -1] = 1
 
-    # Ensure the starting position is free
     maze[1, 1] = 0  # Starting position (1,1) should be free
+
     return maze
 
 def create_maze_plot(maze, save_path=None, title="Maze", figsize=(8, 8), show_grid=True):
@@ -126,7 +128,7 @@ def create_maze_plot(maze, save_path=None, title="Maze", figsize=(8, 8), show_gr
     
     return fig
 
-def create_simple_maze_plot(maze, save_path=None, title=None, figsize=(8, 8)):
+def create_simple_maze_plot(maze, save_path=None, title=None, figsize=(8, 8), save_figure=False):
     """
     Create a simple black and white plot of the maze without any extras.
     
@@ -169,7 +171,7 @@ def create_simple_maze_plot(maze, save_path=None, title=None, figsize=(8, 8)):
     plt.subplots_adjust(left=0, bottom=0, right=1, top=1, wspace=0, hspace=0)
     
     # Save if path provided
-    if save_path:
+    if save_figure:
         plt.savefig(save_path, dpi=300, bbox_inches='tight', 
                    facecolor='white', edgecolor='none', pad_inches=0)
         print(f"Simple maze plot saved to: {save_path}")
@@ -187,17 +189,29 @@ def print_maze(maze1, maze2):
 if __name__ == "__main__":
 
     fig1 = create_simple_maze_plot(create_maze(10, 10, 0.30),
-                           title="10x10 - 15% Obstacles")
+                           title="10x10 - 15% Obstacles",save_figure=True)
     fig2 = create_simple_maze_plot(create_maze(15, 15, 0.30),
-                           title="15x15 - 15% Obstacles)")
+                           title="15x15 - 15% Obstacles)",save_figure=True)
     fig3 = create_simple_maze_plot(create_maze(30, 30, 0.30),
-                           title="30x30 - 15% Obstacles)")
+                           title="30x30 - 15% Obstacles)",save_figure=True)
     fig4 = create_simple_maze_plot(create_maze(10, 10, 0.85),
-                           title="10x10 - 85% Obstacles")
+                           title="10x10 - 85% Obstacles",save_figure=True)
     fig5 = create_simple_maze_plot(create_maze(15, 15, 0.85),
-                           title="15x15 - 85% Obstacles)")
+                           title="15x15 - 85% Obstacles)",save_figure=True)
     fig6 = create_simple_maze_plot(create_maze(30, 30, 0.85),
-                           title="30x30 - 85% Obstacles)")
+                           title="30x30 - 85% Obstacles)",save_figure=True)
+    
+    # fig1 = create_simple_maze_plot(create_maze(10, 10, 0.85),title="10x10 - 85% Obstacles",save_figure=True)
+    # fig2 = create_simple_maze_plot(create_maze(10, 10, 0.85),title="10x10 - 85% Obstacles")
+    # fig3 = create_simple_maze_plot(create_maze(10, 10, 0.85),title="10x10 - 85% Obstacles")
+    # fig4 = create_simple_maze_plot(create_maze(10, 10, 0.85),title="10x10 - 85% Obstacles")
+    # fig5 = create_simple_maze_plot(create_maze(10, 10, 0.85),title="10x10 - 85% Obstacles")
+    # fig6 = create_simple_maze_plot(create_maze(10, 10, 0.85),title="10x10 - 85% Obstacles")
+    # fig7 = create_simple_maze_plot(create_maze(10, 10, 0.85),title="10x10 - 85% Obstacles")
+    # fig8 = create_simple_maze_plot(create_maze(10, 10, 0.85),title="10x10 - 85% Obstacles")
+    # fig9 = create_simple_maze_plot(create_maze(10, 10, 0.85),title="10x10 - 85% Obstacles")
+    # fig10 = create_simple_maze_plot(create_maze(10, 10, 0.85),title="10x10 - 85% Obstacles")
+    
     
     # Show all plots
     import matplotlib.pyplot as plt

@@ -31,7 +31,7 @@ class CCNFeatureExtractor(BaseFeaturesExtractor):
         # The input to the first fully connected layer is now the number of channels
         # from the last conv layer (which is 32).
         n_flatten = 32
-
+                                                                                            
         # Fully connected layers
         self.fc = nn.Sequential(
             nn.Linear(n_flatten, 64),
