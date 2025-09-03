@@ -208,7 +208,6 @@ class MazeExplorationEnv(gym.Env):
             terminated = True
         else:
             # Small reward for new exploration
-            # reward += 0.75 * self.coverage
             reward += 0.75 * (self.explored_free_cells - previous_explored_cells)
 
             # Check if agent is adjacent to or on the target

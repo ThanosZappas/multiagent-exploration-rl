@@ -231,6 +231,7 @@ def train_curriculum():
         # For each level, we create a new model.
         # If a previous model exists, we transfer its learned weights.
         if CHANNELS == 1:
+            lr_schedule = linear_schedule(0.0007, 0.0004)
             model = A2C(
                 "CnnPolicy",
                 train_env,
@@ -239,11 +240,12 @@ def train_curriculum():
                 ent_coef=0.001,
                 gamma=0.99,
                 n_steps=5,
-                learning_rate=0.0007,
+                learning_rate=lr_schedule,
                 tensorboard_log=base_log_dir,
                 device=device
             )
         elif CHANNELS == 4:
+            lr_schedule = linear_schedule(0.0005, 0.0002)
             model = A2C(
                     "CnnPolicy",
                     train_env,
@@ -252,7 +254,7 @@ def train_curriculum():
                     ent_coef=0.001,
                     gamma=0.99,
                     n_steps=16, 
-                    learning_rate=0.0005,
+                    learning_rate=lr_schedule,
                     tensorboard_log=base_log_dir,
                     device=device
             )

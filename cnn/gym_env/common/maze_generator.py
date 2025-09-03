@@ -143,7 +143,7 @@ def create_simple_maze_plot(maze, save_path=None, title=None, figsize=(8, 8), sa
     """
     import matplotlib.pyplot as plt
     
-    save_path = "gym_env/plots/" + title.replace(" ", "_").lower() + ".png" if save_path is None else save_path
+    save_path = "gym_env/plots/maze_figures/" + title.replace(" ", "_").lower() + ".png" if save_path is None else save_path
     # Create figure and axis
     fig, ax = plt.subplots(1, 1, figsize=figsize)
     
