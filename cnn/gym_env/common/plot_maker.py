@@ -123,7 +123,6 @@ def compare_algorithms_plot(log_paths, labels, tag, title=None, smoothing=95, sa
     plt.figure(figsize=(12, 6))
     for idx, log_path in enumerate(log_paths):
         steps, values = load_tensorboard_data(log_path, tag)
-        print(f"Loaded tag {tag} from {log_path}.")
         # Convert steps to millions
         steps_millions = steps / 1e6
         
@@ -149,7 +148,7 @@ def compare_algorithms_plot(log_paths, labels, tag, title=None, smoothing=95, sa
     # Format x-axis to show clean numbers with 2M increments
     plt.gca().xaxis.set_major_locator(plt.MultipleLocator(2))
     
-    if save_figures:
+    if save_figures:  
         plt.savefig('gym_env/plots/results/' + algorithm + '/' + title + '.png')
     # plt.show()
 
@@ -166,6 +165,7 @@ def compare_algorithms_channels(PPO=True, DQN=True, A2C=True, save_figures=False
         log_paths = ("gym_env/logs/final/PPO_SingleChannel_Final/level_1_0","gym_env/logs/final/PPO_MultiChannel_Final/level_1_0")
         for tag in tags:
             compare_algorithms_plot(log_paths, labels, tag, title=tag, smoothing=95, save_figures=save_figures, algorithm=algorithm)
+        print("PPO comparison done.")
 
     if DQN:
         algorithm = "DQN"
@@ -173,14 +173,14 @@ def compare_algorithms_channels(PPO=True, DQN=True, A2C=True, save_figures=False
         log_paths = ("gym_env/logs/final/DQN_SingleChannel_Final/level_1_0","gym_env/logs/final/DQN_MultiChannel_Final/level_1_0")
         for tag in tags:
             compare_algorithms_plot(log_paths, labels, tag, title=tag, smoothing=95, save_figures=save_figures, algorithm=algorithm)
-
+        print("DQN comparison done.")
     if A2C:    
         algorithm = "A2C"
         #A2C with single channel vs multi-channel
         log_paths = ("gym_env/logs/final/A2C_SingleChannel_Final/level_1_0","gym_env/logs/final/A2C_MultiChannel_Final/level_1_0")
         for tag in tags:
             compare_algorithms_plot(log_paths, labels, tag, title=tag, smoothing=95, save_figures=save_figures, algorithm=algorithm)
-
+        print("A2C comparison done.")
     
 
 def compare_algorithms(SingleChannel=True, MultiChannel=True, save_figures=False):
@@ -193,15 +193,16 @@ def compare_algorithms(SingleChannel=True, MultiChannel=True, save_figures=False
         #Single channel comparison
         log_paths = ("gym_env/logs/final/PPO_SingleChannel_Final/level_1_0", "gym_env/logs/final/DQN_SingleChannel_Final/level_1_0", "gym_env/logs/final/A2C_SingleChannel_Final/level_1_0")
         for tag in tags:
-            compare_algorithms_plot(log_paths, labels, tag, title='Single Channel Comparison', smoothing=95, save_figures=save_figures, algorithm=algorithm)
-    
+            compare_algorithms_plot(log_paths, labels, tag, title=tag, smoothing=95, save_figures=save_figures, algorithm=algorithm)
+        print("Single channel comparison done.")
+
     if MultiChannel:
         algorithm = "MultiChannel"
         #Multi-channel comparison
         log_paths = ("gym_env/logs/final/PPO_MultiChannel_Final/level_1_0", "gym_env/logs/final/DQN_MultiChannel_Final/level_1_0", "gym_env/logs/final/A2C_MultiChannel_Final/level_1_0")
         for tag in tags:
-            compare_algorithms_plot(log_paths, labels, tag, title='Multi Channel Comparison', smoothing=95, save_figures=save_figures, algorithm=algorithm)
-
+            compare_algorithms_plot(log_paths, labels, tag, title=tag, smoothing=95, save_figures=save_figures, algorithm=algorithm)
+        print("Multi channel comparison done.")
 
 def main():
     # Example usage
@@ -218,7 +219,8 @@ def main():
     
     # compare_algorithms(MultiChannel=True, SingleChannel=True, save_figures=False)
     # compare_algorithms_channels(PPO=True, DQN=True, A2C=True, save_figures=False)
-    compare_algorithms_channels(PPO=True, DQN=True, A2C=False, save_figures=True)
+    # compare_algorithms_channels(PPO=True, DQN=True, A2C=True, save_figures=True)
+    compare_algorithms(MultiChannel=True, SingleChannel=False, save_figures=True)
 
 if __name__ == "__main__":
     main()

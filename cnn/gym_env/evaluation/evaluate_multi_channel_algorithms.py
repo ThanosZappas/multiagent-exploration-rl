@@ -10,7 +10,7 @@ from datetime import datetime
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from environment.maze_exploration_env import MazeExplorationEnv
 
-def evaluate_model(model, env, num_episodes=100, success_threshold=1):
+def evaluate_model(model, env, num_episodes=100, success_threshold=1.0):
     """
     Evaluate a model over a number of episodes and return the results
     Args:
@@ -138,7 +138,6 @@ def main():
                 # Raw data for additional analysis
                 'episode_lengths': results['lengths'],
                 'coverages': results['coverages'],
-                'successes': results['successes'],
                 'successful_lengths': results['successful_lengths']
             }
             

@@ -153,7 +153,7 @@ class MazeExplorationEnv(gym.Env):
 
         # Check max steps
         if self.steps >= self.max_steps:
-            print(f"MAX STEPS REACHED: {self.steps}/{self.max_steps}")
+            # print(f"MAX STEPS REACHED: {self.steps}/{self.max_steps}")
             truncated = True
             reward = -1.0
             # print("Episode truncated due to max steps reached.")
@@ -203,7 +203,7 @@ class MazeExplorationEnv(gym.Env):
             reward += 4
         # Check if the agent has fully explored the maze
         if self.coverage >= 1.0:
-            print("MAZE FULLY EXPLORED!")
+            # print("MAZE FULLY EXPLORED!")
             reward += 120 - (self.steps/self.max_steps * 20)  # Bonus for full exploration, scaled by efficiency
             terminated = True
         else:

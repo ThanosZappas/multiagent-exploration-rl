@@ -10,7 +10,7 @@ from datetime import datetime
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from environment.maze_exploration_env import MazeExplorationEnv
 
-def evaluate_model(model, env, num_episodes=100, success_threshold=1):
+def evaluate_model(model, env, num_episodes=100, success_threshold=1.0):
     """
     Evaluate a model over a number of episodes and return the results
     Args:
@@ -39,7 +39,8 @@ def evaluate_model(model, env, num_episodes=100, success_threshold=1):
             steps += 1
         
         coverage = info.get('coverage', 0)
-        is_success = coverage >= success_threshold        
+        is_success = coverage >= success_threshold  # Convert to percentage
+        
         episode_rewards.append(episode_reward)
         episode_lengths.append(steps)
         coverages.append(coverage)
@@ -78,7 +79,7 @@ def main():
         },
         {
             'name': 'A2C',
-            'path': 'gym_env/models/final/PPO_SingleChannel_Final/level_1_final.zip',
+            'path': 'gym_env/models/final/A2C_SingleChannel_Final/level_1_final.zip',
             'class': A2C
         }
     ]
@@ -137,7 +138,6 @@ def main():
                 # Raw data for additional analysis
                 'episode_lengths': results['lengths'],
                 'coverages': results['coverages'],
-                'successes': results['successes'],
                 'successful_lengths': results['successful_lengths']
             }
             
