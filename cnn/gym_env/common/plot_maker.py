@@ -82,8 +82,9 @@ def plot_tensorboard_data(log_path, tag, title=None, smoothing=95,file_name=None
 
 def plot_multiple_tensorboard_data(log_path, tags, title=None, smoothing=95, file_name=None):
     # Define colors for multiple lines
-    COLORS = ('#da0dd3ff', '#0d7ad3ff', '#32CD32', '#FFA500', '#800080')
-    
+   
+    COLORS = ("#1f77b4", "#ff7f0e", "#2ca02c") 
+ 
     plt.figure(figsize=(12, 6))
     for idx, tag in enumerate(tags):
         steps, values = load_tensorboard_data(log_path, tag)
@@ -117,8 +118,22 @@ def plot_multiple_tensorboard_data(log_path, tags, title=None, smoothing=95, fil
     plt.show()
 
 
-def compare_algorithms_plot(log_paths, labels, tag, title=None, smoothing=95, save_figures=False,algorithm="ERROR"):
-    COLORS = ('#da0dd3ff', '#0d7ad3ff', '#32CD32')
+def compare_algorithms_plot(log_paths, labels, tag, title=None, smoothing=95, save_figures=False, algorithm="ERROR"):
+    MAIN_COLORS = ("#1f77b4", "#ff7f0e", "#2ca02c") 
+    OTHER_COLORS = ("#6baed6", "#fdae6b", "#98df8a")
+    if(algorithm == 'SingleChannel'):
+        COLORS = OTHER_COLORS
+    else: 
+        COLORS = MAIN_COLORS 
+
+    if(labels[0] == "Single-Channel"):
+        if algorithm == "DQN":
+            COLORS = (OTHER_COLORS[0], MAIN_COLORS[0])
+        if algorithm == "PPO":
+            COLORS = (OTHER_COLORS[1], MAIN_COLORS[1])
+        if algorithm == "A2C":
+            COLORS = (OTHER_COLORS[2], MAIN_COLORS[2])
+        
     # plt.clf()
     plt.figure(figsize=(12, 6))
     for idx, log_path in enumerate(log_paths):
@@ -131,9 +146,9 @@ def compare_algorithms_plot(log_paths, labels, tag, title=None, smoothing=95, sa
             kernel = np.ones(smoothing) / smoothing
             values_smooth = np.convolve(values, kernel, mode='valid')
             steps_smooth = steps_millions[smoothing-1:]
-            plt.plot(steps_smooth, values_smooth, label=labels[idx], color=COLORS[idx % len(COLORS)], linewidth=1.7)
+            plt.plot(steps_smooth, values_smooth, label=labels[idx], color=COLORS[idx], linewidth=1.7)
         else:
-            plt.plot(steps_millions, values, label=labels[idx], color=COLORS[idx % len(COLORS)], linewidth=1.7)
+            plt.plot(steps_millions, values, label=labels[idx], color=COLORS[idx], linewidth=1.7)
 
     plt.xlim(left=0, right=20.5)  # Set x-axis range
     plt.xlabel('Timesteps (Million)')
@@ -161,7 +176,6 @@ def compare_algorithms_channels(PPO=True, DQN=True, A2C=True, save_figures=False
     
     if PPO:
         algorithm = "PPO"
-        #PPO with single channel vs multi-channel
         log_paths = ("gym_env/logs/final/PPO_SingleChannel_Final/level_1_0","gym_env/logs/final/PPO_MultiChannel_Final/level_1_0")
         for tag in tags:
             compare_algorithms_plot(log_paths, labels, tag, title=tag, smoothing=95, save_figures=save_figures, algorithm=algorithm)
@@ -169,14 +183,12 @@ def compare_algorithms_channels(PPO=True, DQN=True, A2C=True, save_figures=False
 
     if DQN:
         algorithm = "DQN"
-        #PPO with single channel vs multi-channel
         log_paths = ("gym_env/logs/final/DQN_SingleChannel_Final/level_1_0","gym_env/logs/final/DQN_MultiChannel_Final/level_1_0")
         for tag in tags:
             compare_algorithms_plot(log_paths, labels, tag, title=tag, smoothing=95, save_figures=save_figures, algorithm=algorithm)
         print("DQN comparison done.")
     if A2C:    
         algorithm = "A2C"
-        #A2C with single channel vs multi-channel
         log_paths = ("gym_env/logs/final/A2C_SingleChannel_Final/level_1_0","gym_env/logs/final/A2C_MultiChannel_Final/level_1_0")
         for tag in tags:
             compare_algorithms_plot(log_paths, labels, tag, title=tag, smoothing=95, save_figures=save_figures, algorithm=algorithm)
@@ -185,42 +197,27 @@ def compare_algorithms_channels(PPO=True, DQN=True, A2C=True, save_figures=False
 
 def compare_algorithms(SingleChannel=True, MultiChannel=True, save_figures=False):
 
-    labels = ("PPO", "DQN", "A2C")
+    labels = ("DQN", "PPO", "A2C")
     tags = ("rollout/mean_ep_coverage", "rollout/ep_rew_mean", 'rollout/mean_ep_coverage', 'rollout/success_rate', 'eval/mean_ep_length', 'eval/mean_reward')
     
     if SingleChannel:
         algorithm = "SingleChannel"
-        #Single channel comparison
-        log_paths = ("gym_env/logs/final/PPO_SingleChannel_Final/level_1_0", "gym_env/logs/final/DQN_SingleChannel_Final/level_1_0", "gym_env/logs/final/A2C_SingleChannel_Final/level_1_0")
+        log_paths = ("gym_env/logs/final/DQN_SingleChannel_Final/level_1_0", "gym_env/logs/final/PPO_SingleChannel_Final/level_1_0", "gym_env/logs/final/A2C_SingleChannel_Final/level_1_0")
         for tag in tags:
             compare_algorithms_plot(log_paths, labels, tag, title=tag, smoothing=95, save_figures=save_figures, algorithm=algorithm)
         print("Single channel comparison done.")
 
     if MultiChannel:
         algorithm = "MultiChannel"
-        #Multi-channel comparison
-        log_paths = ("gym_env/logs/final/PPO_MultiChannel_Final/level_1_0", "gym_env/logs/final/DQN_MultiChannel_Final/level_1_0", "gym_env/logs/final/A2C_MultiChannel_Final/level_1_0")
+        log_paths = ("gym_env/logs/final/DQN_MultiChannel_Final/level_1_0", "gym_env/logs/final/PPO_MultiChannel_Final/level_1_0", "gym_env/logs/final/A2C_MultiChannel_Final/level_1_0")
         for tag in tags:
             compare_algorithms_plot(log_paths, labels, tag, title=tag, smoothing=95, save_figures=save_figures, algorithm=algorithm)
         print("Multi channel comparison done.")
 
 def main():
-    # Example usage
-    log_path = "gym_env/logs/final/dqn_curriculum_20250830-232049/level_1_0"
-    temp_log_path = "gym_env/logs/final/ppo_curriculum_20250828-165348/level_1_0"
-    labels = ("PPO","DQN")
-    log_paths = ("gym_env/logs/final/PPO_02-09-2025_00:53/level_1_0","gym_env/logs/final/dqn_curriculum_20250830-232049/level_1_0")
-    # Available tags: ['rollout/ep_len_mean', 'rollout/ep_rew_mean', 'rollout/exploration_rate', 'time/fps', 'rollout/mean_ep_coverage', 'rollout/success_rate', 'train/learning_rate', 'train/loss', 'eval/mean_ep_length', 'eval/mean_reward']    
-    tag = 'rollout/ep_rew_mean'
-    tags = ('rollout/ep_rew_mean','eval/mean_reward')
-    # Create plot with smoothing
-    # plot_tensorboard_data(temp_log_path, tags[1], title='Mean Episode Reward in Training', smoothing=95,file_name=None)
-    # plot_multiple_tensorboard_data(temp_log_path, tags, title='Mean Reward in Training and Evaluation', smoothing=95, file_name=None)
-    
-    # compare_algorithms(MultiChannel=True, SingleChannel=True, save_figures=False)
-    # compare_algorithms_channels(PPO=True, DQN=True, A2C=True, save_figures=False)
-    # compare_algorithms_channels(PPO=True, DQN=True, A2C=True, save_figures=True)
-    compare_algorithms(MultiChannel=True, SingleChannel=False, save_figures=True)
 
+    compare_algorithms_channels(PPO=True, DQN=True, A2C=True, save_figures=True)
+    # compare_algorithms(MultiChannel=True, SingleChannel=True, save_figures=True)
+    
 if __name__ == "__main__":
     main()

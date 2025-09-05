@@ -89,7 +89,7 @@ def main():
                 difficulty_level=1, 
                 configuration=configuration, 
                 channels=channels, 
-                episodes=10
+                episodes=1000
             )
             if result:
                 results[model_path] = result
