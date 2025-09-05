@@ -217,7 +217,7 @@ def compare_algorithms(SingleChannel=True, MultiChannel=True, save_figures=False
 def main():
 
     compare_algorithms_channels(PPO=True, DQN=True, A2C=True, save_figures=True)
-    # compare_algorithms(MultiChannel=True, SingleChannel=True, save_figures=True)
+    compare_algorithms(MultiChannel=True, SingleChannel=True, save_figures=True)
     
 if __name__ == "__main__":
     main()

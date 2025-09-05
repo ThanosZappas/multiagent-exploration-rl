@@ -9,7 +9,7 @@ import gymnasium as gym
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from environment.maze_exploration_env import MazeExplorationEnv
 
-def evaluate_model(model_path, model_class, difficulty_level=5, configuration=None, channels=4, episodes=100):
+def evaluate_model(model_path, model_class, difficulty_level=5, configuration=None, channels=4, episodes=1000):
     """Evaluate a trained model on specified difficulty level"""
     
     # Create environment

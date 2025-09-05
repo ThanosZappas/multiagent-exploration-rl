@@ -69,65 +69,6 @@ def create_maze(rows, cols, obs_prob=0.85):
 
     return maze
 
-def create_maze_plot(maze, save_path=None, title="Maze", figsize=(8, 8), show_grid=True):
-    """
-    Create a plot/PNG of the maze with walls as black and free cells as white.
-    
-    Args:
-        maze (np.array): 2D maze array where 1=wall/obstacle, 0=free cell
-        save_path (str, optional): Path to save the PNG file. If None, just displays
-        title (str): Title for the plot
-        figsize (tuple): Figure size (width, height)
-        show_grid (bool): Whether to show grid lines
-    
-    Returns:
-        matplotlib.figure.Figure: The generated figure
-    """
-    import matplotlib.pyplot as plt
-    import matplotlib.patches as patches
-
-    if save_path is not None:
-        save_path = "plots/" + title.replace(" ", "_").lower() + ".png"
-
-    # Create figure and axis
-    fig, ax = plt.subplots(1, 1, figsize=figsize)
-    
-    # Create the maze visualization
-    # 0 (free cells) -> white (1.0)
-    # 1 (walls/obstacles) -> black (0.0)
-    maze_visual = 1 - maze  # Invert: 0->1 (white), 1->0 (black)
-    
-    # Display the maze
-    im = ax.imshow(maze_visual, cmap='gray', vmin=0, vmax=1, interpolation='nearest')
-    
-    # Set title
-    ax.set_title(title, fontsize=16, fontweight='bold')
-    
-    # Configure grid
-    if show_grid:
-        # Add grid lines
-        ax.set_xticks(np.arange(-0.5, maze.shape[1], 1), minor=True)
-        ax.set_yticks(np.arange(-0.5, maze.shape[0], 1), minor=True)
-        ax.grid(which='minor', color='gray', linestyle='-', linewidth=0.5, alpha=0.15)
-
-    # Remove all axes, ticks, and labels for clean look
-    ax.set_xticks([])
-    ax.set_yticks([])
-    # ax.axis('off')
-    
-    # Make sure the aspect ratio is equal (square cells)
-    ax.set_aspect('equal')
-   
-    plt.tight_layout()
-    
-    # Save if path provided
-    if save_path:
-        plt.savefig(save_path, dpi=300, bbox_inches='tight', 
-                   facecolor='white', edgecolor='none')
-        print(f"Maze plot saved to: {save_path}")
-    
-    return fig
-
 def create_simple_maze_plot(maze, save_path=None, title=None, figsize=(8, 8), save_figure=False):
     """
     Create a simple black and white plot of the maze without any extras.
@@ -178,14 +119,6 @@ def create_simple_maze_plot(maze, save_path=None, title=None, figsize=(8, 8), sa
     
     return fig
 
-def print_maze(maze1, maze2):
-    print("Low obstacle density (0.15):")
-    print(np.array2string(maze1, separator=' '))
-    print("\nHigh obstacle density (0.85):")
-    print(np.array2string(maze2, separator=' '))
-
-
-
 if __name__ == "__main__":
 
     fig1 = create_simple_maze_plot(create_maze(10, 10, 0.30),
@@ -200,19 +133,6 @@ if __name__ == "__main__":
                            title="15x15 - 85% Obstacles)",save_figure=True)
     fig6 = create_simple_maze_plot(create_maze(30, 30, 0.85),
                            title="30x30 - 85% Obstacles)",save_figure=True)
-    
-    # fig1 = create_simple_maze_plot(create_maze(10, 10, 0.85),title="10x10 - 85% Obstacles",save_figure=True)
-    # fig2 = create_simple_maze_plot(create_maze(10, 10, 0.85),title="10x10 - 85% Obstacles")
-    # fig3 = create_simple_maze_plot(create_maze(10, 10, 0.85),title="10x10 - 85% Obstacles")
-    # fig4 = create_simple_maze_plot(create_maze(10, 10, 0.85),title="10x10 - 85% Obstacles")
-    # fig5 = create_simple_maze_plot(create_maze(10, 10, 0.85),title="10x10 - 85% Obstacles")
-    # fig6 = create_simple_maze_plot(create_maze(10, 10, 0.85),title="10x10 - 85% Obstacles")
-    # fig7 = create_simple_maze_plot(create_maze(10, 10, 0.85),title="10x10 - 85% Obstacles")
-    # fig8 = create_simple_maze_plot(create_maze(10, 10, 0.85),title="10x10 - 85% Obstacles")
-    # fig9 = create_simple_maze_plot(create_maze(10, 10, 0.85),title="10x10 - 85% Obstacles")
-    # fig10 = create_simple_maze_plot(create_maze(10, 10, 0.85),title="10x10 - 85% Obstacles")
-    
-    
     # Show all plots
     import matplotlib.pyplot as plt
     plt.show()

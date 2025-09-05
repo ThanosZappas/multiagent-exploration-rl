@@ -15,9 +15,7 @@ from stable_baselines3.common.vec_env import DummyVecEnv
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.callbacks import EvalCallback, CallbackList, BaseCallback
 from stable_baselines3.common.save_util import load_from_zip_file
-from stable_baselines3.common.evaluation import evaluate_policy
 from typing import Callable
-from neural_networks.simple_cnn import Simple1ChannelCNN
 from neural_networks.advanced_cnn import CCNFeatureExtractor as CNN
 from environment.maze_exploration_env import MazeExplorationEnv
 
@@ -27,7 +25,6 @@ base_model_dir = f"models/PPO_{time}"
 base_log_dir = f"logs/PPO_{time}"
 os.makedirs(base_model_dir, exist_ok=True)
 os.makedirs(base_log_dir, exist_ok=True)
-CHANNELS = 4  # Change to 1 for single channel CNN
 
 # Curriculum configuration
 CURRICULUM_CONFIGURATION = {
@@ -39,6 +36,9 @@ CURRICULUM_CONFIGURATION = {
     # ,
     # 4: {"timesteps": 10000000, "rows": 14, "columns": 14, "maze_density" : 0.85, "max_steps": 450}
 }
+
+CHANNELS = 1  # SINGLE CHANNEL INPUT
+# CHANNELS = 4  # MULTI CHANNEL INPUT
 
 def make_env(difficulty_level=1):
     """Create environment with specified difficulty level"""
@@ -103,46 +103,7 @@ class MetricsEvalCallback(BaseCallback):
             self.logger.record("rollout/success_rate", success_rate)
             self.logger.record("rollout/mean_ep_coverage", mean_coverage)
 
-        # --- Log evaluation metrics ---
-        # if self.n_calls > 0 and self.n_calls % self.eval_freq == 0:
-        #     self._run_evaluation()
-
         return True
-
-    def _run_evaluation(self) -> None:
-        """
-        Manually run evaluation and log metrics.
-        """
-        all_coverages = []
-        all_rewards = []
-
-        for _ in range(self.n_eval_episodes):
-            obs = self.eval_env.reset()
-            done = False
-            episode_reward = 0
-            while not done:
-                action, _ = self.model.predict(obs, deterministic=True)
-                obs, reward, terminated, truncated, infos = self.eval_env.step(action)
-                done = terminated[0] or truncated[0]
-                episode_reward += reward[0]
-                
-                if done:
-                    # The info dict from the VecEnv contains the final info from the Monitor
-                    final_info = infos[0]
-                    if "episode" in final_info:
-                        all_coverages.append(final_info["episode"]["coverage"])
-            all_rewards.append(episode_reward)
-
-        if all_coverages:
-            mean_coverage = np.mean(all_coverages)
-            success_rate = np.mean([c >= 1.0 for c in all_coverages])
-            self.logger.record("eval/mean_coverage", mean_coverage)
-            self.logger.record("eval/success_rate", success_rate)
-        
-        if all_rewards:
-            self.logger.record("eval/mean_reward", np.mean(all_rewards))
-        
-        self.logger.dump(self.num_timesteps)
 
 
 def transfer_weights(new_model, old_model_path, device):
@@ -345,13 +306,9 @@ if __name__ == "__main__":
     final_model, model_dir = train_curriculum()
     model_dir = base_model_dir  
     
-    # Evaluate the final model on the hardest level
-    # print("\nEvaluating final model on Level 5...")
-    # evaluate_model(f"{model_dir}/level_5_final.zip", difficulty_level=train_curiculum)
-    
     # Optional: Evaluate on all levels to see generalization
     print("\nEvaluating generalization across all levels...")
     for level, configuration in CURRICULUM_CONFIGURATION.items():
         print(f"\nLevel {level} evaluation:")
         model_to_eval_path = f"{model_dir}/level_{level}_final.zip"
-        evaluate_model(model_to_eval_path, difficulty_level=level, configuration=configuration, episodes=5)
+        evaluate_model(model_to_eval_path, difficulty_level=level, configuration=configuration, episodes=10)

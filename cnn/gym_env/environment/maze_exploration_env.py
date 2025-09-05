@@ -156,8 +156,6 @@ class MazeExplorationEnv(gym.Env):
             # print(f"MAX STEPS REACHED: {self.steps}/{self.max_steps}")
             truncated = True
             reward = -1.0
-            # print("Episode truncated due to max steps reached.")
-            # print("Reward:", reward, "Coverage:", self.coverage, "Lives remaining:", self.current_lives)
             return self._calculate_observation(), reward, terminated, truncated, self._get_info()
 
         # Convert action and calculate new position
@@ -176,8 +174,7 @@ class MazeExplorationEnv(gym.Env):
             if self.current_lives <= 0:
                 terminated = True
                 reward = -3.0
-                # print("Agent has no lives left. Episode terminated.")
-                # print("Reward:", reward, "Coverage:", self.coverage, "Lives remaining:", self.current_lives)
+                # print("NO LIVES REMAINING. EPISODE TERMINATED.")
                 return self._calculate_observation(), reward, terminated, truncated, self._get_info()
             else:
                 reward -= 3.0
